@@ -224,9 +224,9 @@ const api = {
   },
   actions: {
     async logOut() {
-      this.clearSessionCache();
+      api.clearSessionCache();
       sessionStorage.clear();
-      this.alreadyTryingToGetSession = false;
+      api.alreadyTryingToGetSession = false;
       return authClient.signOut();
     },
   },

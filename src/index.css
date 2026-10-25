@@ -426,3 +426,12 @@
 .mdxeditor-popup-container {
   display: none !important;
 }
+
+/* Hide scrollbars on horizontal scrollers (mobile tab strips, carousels)
+   while keeping them scrollable. */
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}

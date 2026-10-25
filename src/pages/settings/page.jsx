@@ -204,7 +204,8 @@ const ToggleRow = React.memo(function ToggleRow({
         checked={checked}
         onCheckedChange={onChange}
         aria-label={title}
-        className="shrink-0 mt-0.5 sm:mt-0"
+        /* larger thumb + track below sm for a comfortable touch target */
+        className="mt-0.5 h-6 w-10 shrink-0 sm:mt-0 sm:h-5 sm:w-9 sm:p-0 [&>span]:h-5 [&>span]:w-5 sm:[&>span]:h-4 sm:[&>span]:w-4 data-[state=checked]:[&>span]:translate-x-4 sm:data-[state=checked]:[&>span]:translate-x-4"
       />
     </div>
   );
@@ -372,7 +373,7 @@ const PasswordInput = React.memo(function PasswordInput({
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
         autoComplete={autoComplete}
-        className="pl-10 pr-10"
+        className="pl-10 pr-10 text-base lg:text-sm"
         aria-describedby={describedById}
       />
       <button
@@ -380,7 +381,7 @@ const PasswordInput = React.memo(function PasswordInput({
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? "Hide password" : "Show password"}
         aria-pressed={visible}
-        className="absolute right-3 top-1/2 -translate-y-1/2 rounded-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        className="absolute right-1 top-1/2 grid h-9 w-9 -translate-y-1/2 place-items-center rounded-md text-muted-foreground transition-colors hover:rounded-md hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring sm:right-2 sm:h-8 sm:w-8"
       >
         {visible ? (
           <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -541,7 +542,7 @@ const SettingsPage = () => {
   /* Actions                                                           */
   /* ---------------------------------------------------------------- */
 
-  const pickAvatar = useCallback(
+  const _pickAvatar = useCallback(
     async (file) => {
       if (!file) return;
       if (!file.type.startsWith("image/")) {
@@ -762,19 +763,23 @@ const SettingsPage = () => {
     <TabsTrigger
       key={tab.value}
       value={tab.value}
+      aria-label={t(`settings.${tab.value}`)}
       className={cn(
-        "h-auto flex-1 lg:w-full justify-center lg:justify-start gap-2 lg:gap-3 whitespace-nowrap rounded-lg px-3 py-2.5 text-xs sm:text-sm font-medium transition-all duration-200 motion-reduce:transition-none",
+        "h-auto min-w-0 flex-1 lg:w-full justify-center lg:justify-start gap-1.5 sm:gap-3 whitespace-nowrap rounded-lg px-1 sm:px-3 py-2 text-[10px] sm:text-sm font-medium transition-all duration-200 motion-reduce:transition-none",
         "data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
         "hover:bg-background/60",
         "shrink-0",
       )}
     >
-      <tab.icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-      <span>{t(`settings.${tab.value}`)}</span>
+      <tab.icon
+        className="hidden h-4 w-4 shrink-0 sm:block"
+        aria-hidden="true"
+      />
+      <span className="truncate tracking-tight">{t(`settings.${tab.value}`)}</span>
       {tabDirty[tab.value] ? (
         <span
           aria-hidden="true"
-          className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary lg:ml-auto motion-safe:animate-pulse"
+          className="h-1.5 w-1.5 shrink-0 rounded-full bg-primary motion-safe:animate-pulse"
         />
       ) : null}
     </TabsTrigger>
@@ -784,28 +789,31 @@ const SettingsPage = () => {
     <div
       aria-live="polite"
       className={cn(
-        "relative z-40 mt-6 w-full transition-all duration-300 motion-reduce:transition-none",
+        "sticky z-30 mt-6 w-full",
+        /* sit clear of the fixed mobile bottom-nav (h-16 + safe-area) */
+        "bottom-[calc(4.5rem+env(safe-area-inset-bottom))] md:bottom-6",
+        "transition-all duration-300 motion-reduce:transition-none",
         profileDirty || prefsDirty
           ? "translate-y-0 opacity-100"
           : "pointer-events-none translate-y-4 opacity-0",
       )}
     >
-      <div className="flex w-full flex-col xs:flex-row items-start justify-between gap-3 rounded-2xl border bg-background/95 p-3 sm:p-3.5 sm:pl-4 shadow-xl backdrop-blur-md">
-        <p className="flex items-center p-2 gap-2 text-xs sm:text-sm font-medium text-foreground">
+      <div className="flex w-full flex-col gap-3 rounded-2xl border bg-background/95 p-3 shadow-xl backdrop-blur-md sm:flex-row sm:items-center sm:justify-between sm:p-3.5 sm:pl-4">
+        <p className="flex items-center gap-2 text-xs sm:text-sm font-medium text-foreground">
           <span
             aria-hidden="true"
             className="h-2 w-2 shrink-0 rounded-full bg-amber-500 motion-safe:animate-pulse"
           />
           {t("settings.unsaved", { defaultValue: "You have unsaved changes" })}
         </p>
-        <div className="flex items-center gap-2 w-full xs:w-auto justify-end">
+        <div className="flex items-center gap-2 sm:w-auto">
           <Button
             type="button"
             variant="ghost"
             size="sm"
             onClick={discardChanges}
             disabled={saving}
-            className="h-8 sm:h-9 text-xs sm:text-sm text-muted-foreground hover:text-foreground"
+            className="h-9 min-w-0 flex-1 sm:h-9 sm:min-w-0 sm:flex-none text-xs sm:text-sm text-muted-foreground hover:text-foreground"
           >
             {t("common.discard", { defaultValue: "Discard" })}
           </Button>
@@ -814,7 +822,7 @@ const SettingsPage = () => {
             size="sm"
             onClick={saveChanges}
             disabled={saving || (!profileDirty && !prefsDirty)}
-            className="h-8 sm:h-9 gap-1.5 text-xs sm:text-sm font-medium"
+            className="h-9 min-w-0 flex-1 gap-1.5 text-xs sm:h-9 sm:flex-1 sm:min-w-0 sm:text-sm font-medium lg:flex-none"
           >
             {saving ? (
               <>
@@ -837,7 +845,7 @@ const SettingsPage = () => {
   );
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-background">
+    <div className="relative min-h-screen bg-background">
       <StoreMeta
         title={t("settings.title")}
         description={t("settings.subtitle")}
@@ -937,8 +945,9 @@ const SettingsPage = () => {
             onValueChange={setActiveTab}
             className="mt-6 sm:mt-8 gap-6 sm:gap-8 animate-in fade-in-0 slide-in-from-bottom-2 fill-mode-both duration-500 [animation-delay:100ms] lg:grid lg:grid-cols-[280px_minmax(0,1fr)] lg:items-start motion-reduce:animate-none"
           >
-            {/* Navigation column */}
-            <div className="space-y-4 lg:sticky lg:top-20">
+            {/* Navigation column — sticks under the fixed top navbar on mobile,
+                becomes the sidebar column at lg */}
+            <div className="space-y-4 max-lg:sticky max-lg:top-16 max-lg:z-30 lg:sticky lg:top-20">
               {committed ? (
                 <Card className="hidden lg:block">
                   <CardContent className="flex flex-col items-center gap-3 p-6 text-center">
@@ -964,7 +973,10 @@ const SettingsPage = () => {
                 </Card>
               ) : null}
 
-              <TabsList className="flex h-auto w-full gap-1.5 overflow-x-auto rounded-xl border bg-muted/40 p-1.5 lg:flex-col lg:overflow-visible scrollbar-none">
+              <TabsList
+                aria-label={t("settings.title")}
+                className="flex h-auto w-full gap-1 overflow-x-auto max-lg:scrollbar-none rounded-xl border bg-background/90 p-1.5 shadow-sm backdrop-blur-md lg:flex-col lg:overflow-visible lg:bg-muted/40 lg:shadow-none lg:backdrop-blur-none"
+              >
                 {TABS.map(navTrigger)}
               </TabsList>
             </div>
@@ -1033,9 +1045,9 @@ const SettingsPage = () => {
                         type="file"
                         accept="image/*"
                         className="sr-only"
-                        onChange={(e) => {
+                        onChange={() => {
                           // currently disabled profile pic uploading
-                          // pickAvatar(e.target.files?.[0])
+                          // _pickAvatar(e.target.files?.[0])
                           toast.info(
                             t("settings.uploadDisabled", {
                               defaultValue:
@@ -1130,7 +1142,7 @@ const SettingsPage = () => {
                               nameError ? "name-error" : undefined
                             }
                             className={cn(
-                              "pl-10 text-xs sm:text-sm",
+                              "pl-10 text-base lg:text-sm",
                               nameError &&
                                 "border-destructive focus-visible:ring-destructive",
                             )}
@@ -1157,7 +1169,7 @@ const SettingsPage = () => {
                             value={draft.email}
                             readOnly
                             disabled
-                            className="pl-10 text-xs sm:text-sm"
+                            className="pl-10 text-base lg:text-sm"
                             aria-describedby="email-hint"
                           />
                         </div>
@@ -1209,7 +1221,7 @@ const SettingsPage = () => {
                               phoneError ? "phone-error" : undefined
                             }
                             className={cn(
-                              "pl-10 text-xs sm:text-sm",
+                              "pl-10 text-base lg:text-sm",
                               phoneError &&
                                 "border-destructive focus-visible:ring-destructive",
                             )}
@@ -1233,7 +1245,7 @@ const SettingsPage = () => {
                         >
                           <SelectTrigger
                             id="language"
-                            className="w-full text-xs sm:text-sm"
+                            className="w-full text-base lg:text-sm"
                           >
                             <Globe
                               className="h-4 w-4 text-muted-foreground"
