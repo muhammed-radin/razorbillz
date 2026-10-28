@@ -49,7 +49,7 @@ function App() {
   const navigation = useNavigation();
   const isNavigating = navigation.state === "loading";
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isGuestAccess =
     GUEST_ACCESS_PATHS.includes(location.pathname) ||
@@ -121,6 +121,7 @@ function App() {
         ) {
           toast.success("Google Sign-In successful");
           api.clearSessionCache(); // Clear any existing session data
+          setSearchParams({}); // Clear the search params to avoid repeated handling
           hasRun.current = true;
           navigate("/"); // Navigate to the home page after successful Google sign-in
         } else if (
@@ -130,6 +131,19 @@ function App() {
           toast.error("Google Sign-In failed. Please try again.");
           hasRun.current = true;
           navigate("/login"); // Navigate to the login page after failed Google sign-in
+        }
+
+        if (
+          searchParams.get("action") === "verify-email" &&
+          searchParams.get("status") === "success"
+        ) {
+          toast.success("Email verification successful.");
+          hasRun.current = true;
+          setSearchParams({}); // Clear the search params to avoid repeated handling
+          api.clearSessionCache(); // Clear any existing session data
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000); // Reload the page to reflect the verified session
         }
       }
 

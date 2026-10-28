@@ -154,7 +154,7 @@ export function AuthLayout({
           <div className="w-full max-w-md mx-auto flex items-center justify-between pb-2 sm:pb-3 shrink-0">
             <Link
               to="/"
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
+              className="hidden max-lg:inline-flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors group"
             >
               <ArrowLeft className="w-3.5 h-3.5 transition-transform group-hover:-translate-x-0.5" />
               <span>Back to Store</span>

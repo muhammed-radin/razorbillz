@@ -83,9 +83,10 @@ export default function HomePage() {
   useEffect(() => {
     let live = true;
     Promise.allSettled([
+      api.waitForSession(),
       api.client.get("/api/products/feed"),
       api.client.get("/api/categories?limit=12"),
-    ]).then(([feed, cats]) => {
+    ]).then(([sessionGot, feed, cats]) => {
       if (!live) return;
       if (feed.status === "fulfilled") {
         const d = feed.value.data || {};
