@@ -58,8 +58,8 @@ export const storeConfig = {
    * Site / URLs / localisation defaults
    * ----------------------------------------------------------------------- */
   site: {
-    url: "https://RazorBillz.vercel.app",
-    domain: "RazorBillz.vercel.app",
+    url: "https://razorbillz.vercel.app",
+    domain: "razorbillz.vercel.app",
     /** Currency used to render prices & invoices. */
     currency: "INR",
     currencySymbol: "₹",
@@ -77,8 +77,9 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   assets: {
     logo: "/favicon_io/android-chrome-512x512.png",
+    ogLogo32: "https://razorbills.vercel.app/favicon_io/favicon-32x32.png",
     ogImage:
-      "https://RazorBillz.vercel.app/favicon_io/android-chrome-512x512.png",
+      "https://razorbills.vercel.app/favicon_io/android-chrome-512x512.png",
     icon: "/favicon.ico",
     appleTouchIcon: "/favicon_io/apple-touch-icon.png",
     favicon32: "/favicon_io/favicon-32x32.png",
@@ -92,17 +93,17 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   contact: {
     email: {
-      support: "support@RazorBillz.com",
-      care: "care@RazorBillz.in",
-      privacy: "privacy@RazorBillz.com",
+      support: "support.razorbillz@gmail.com",
+      care: "support.razorbillz@gmail.com",
+      privacy: "support.razorbillz@gmail.com",
     },
     phone: {
       /** Primary display number. */
-      primary: "+91 98470 00000",
+      primary: "+91 79942 62301",
       /** Support line (falls back to primary when equal). */
-      support: "+91 98470 00000",
+      support: "+91 79942 62301",
       /** WhatsApp number in international format (no spaces / symbols). */
-      whatsapp: "919847000000",
+      whatsapp: "917994262301",
     },
     /** Opening hours copy. */
     hours: {
@@ -136,8 +137,8 @@ export const storeConfig = {
     youtube: null,
     facebook: null,
     x: null,
-    website: "https://RazorBillz.vercel.app",
-    whatsapp: "https://wa.me/919847000000",
+    website: "https://razorbillz.vercel.app",
+    whatsapp: "https://wa.me/917994262301",
   },
 
   /* ----------------------------------------------------------------------- *

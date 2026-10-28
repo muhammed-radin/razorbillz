@@ -21,13 +21,15 @@
     "dayjs": "^1.11.23",
     "debug": "~2.6.9",
     "dotenv": "^17.2.3",
+    "ejs": "^7.0.2",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^8.6.2",
-    "firebase": "^12.6.0",
+    "firebase": "^9.14.0",
     "mongodb": "^7.5.0",
     "mongoose": "^9.0.1",
     "morgan": "^1.11.0",
+    "nodemailer": "^10.2.1",
     "ua-parser-js": "^2.0.10",
     "uuid": "^14.0.1"
   }

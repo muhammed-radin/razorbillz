@@ -1,0 +1,204 @@
+<%
+  const productName = locals.appName || "RazorBills";
+  const recipientName = locals.name || "there";
+  const actionUrl = locals.verificationUrl || locals.verifyUrl || "#";
+  const codeValue = locals.code || locals.verificationCode;
+  const expiry = locals.expiryMinutes || 15;
+  const logoUrl = locals.logoUrl || locals.logo;
+  const logoAlt = locals.logoAlt || productName;
+  const verificationType = String(locals.verificationType || "both").toLowerCase();
+  const showLink = verificationType === "link" || verificationType === "both";
+  const showOtp = verificationType === "otp" || verificationType === "both";
+%>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title>Verify your email | <%= productName %></title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .email-shell {
+          width: 100% !important;
+        }
+
+        .email-content {
+          padding: 36px 24px !important;
+        }
+
+        .heading {
+          font-size: 28px !important;
+          line-height: 1.2 !important;
+        }
+
+        .code {
+          font-size: 26px !important;
+          letter-spacing: 5px !important;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        .email-body {
+          background-color: #111111 !important;
+        }
+
+        .email-card,
+        .code-panel {
+          background-color: #1d1d1d !important;
+        }
+
+        .heading,
+        .body-copy,
+        .code {
+          color: #f5f5f5 !important;
+        }
+
+        .muted,
+        .footer-copy {
+          color: #a7a7a7 !important;
+        }
+      }
+    </style>
+  </head>
+  <body
+    class="email-body"
+    style="margin: 0; padding: 0; background-color: #f2f2f2; font-family: Arial, Helvetica, sans-serif; color: #171717;"
+  >
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">
+      Confirm your email address to finish setting up your <%= productName %> account.
+    </div>
+
+    <table
+      role="presentation"
+      width="100%"
+      border="0"
+      cellspacing="0"
+      cellpadding="0"
+      style="background-color: #f2f2f2;"
+    >
+      <tr>
+        <td align="center" style="padding: 32px 16px;">
+          <table
+            role="presentation"
+            class="email-shell"
+            width="600"
+            border="0"
+            cellspacing="0"
+            cellpadding="0"
+            style="width: 100%; max-width: 600px;"
+          >
+            <tr>
+              <td
+                class="email-card"
+                style="background-color: #ffffff; border: 1px solid #dedede; border-radius: 16px; overflow: hidden;"
+              >
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr>
+                    <td style="height: 6px; background-color: #171717; font-size: 0; line-height: 0;">
+                      &nbsp;
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="email-content" style="padding: 48px 56px 44px;">
+                      <div style="margin-bottom: 34px;">
+                        <% if (logoUrl) { %>
+                          <img
+                            src="<%= logoUrl %>"
+                            alt="<%= logoAlt %>"
+                            width="36"
+                            height="36"
+                            style="display: inline-block; width: 36px; height: 36px; margin: 0 10px 0 0; border-radius: 8px; vertical-align: middle;"
+                          />
+                        <% } %>
+                        <span
+                          style="display: inline-block; padding: 9px 12px; border: 1px solid #d2d2d2; border-radius: 8px; color: #171717; font-size: 13px; font-weight: 700; letter-spacing: 2px; line-height: 1; text-transform: uppercase;"
+                        >
+                          <%= productName %>
+                        </span>
+                      </div>
+
+                      <p class="muted" style="margin: 0 0 12px; color: #737373; font-size: 14px; line-height: 1.5;">
+                        Welcome, <%= recipientName %>
+                      </p>
+                      <h1 class="heading" style="margin: 0 0 18px; color: #171717; font-size: 34px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.15;">
+                        Verify your email
+                      </h1>
+                      <p class="body-copy" style="margin: 0 0 28px; color: #4a4a4a; font-size: 16px; line-height: 1.7;">
+                        Thanks for signing up. Confirm your email address to activate your account and get started.
+                      </p>
+
+                      <% if (showLink) { %>
+                        <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px;">
+                          <tr>
+                            <td style="border-radius: 8px; background-color: #171717;">
+                              <a
+                                href="<%= actionUrl %>"
+                                target="_blank"
+                                style="display: inline-block; padding: 15px 24px; border: 1px solid #171717; border-radius: 8px; color: #ffffff; font-size: 15px; font-weight: 700; line-height: 1; text-decoration: none;"
+                              >
+                                Verify my email&nbsp; &rarr;
+                              </a>
+                            </td>
+                          </tr>
+                        </table>
+                      <% } %>
+
+                      <% if (showOtp && codeValue) { %>
+                        <table
+                          role="presentation"
+                          class="code-panel"
+                          width="100%"
+                          border="0"
+                          cellspacing="0"
+                          cellpadding="0"
+                          style="margin: 0 0 28px; background-color: #f6f6f6; border: 1px solid #e1e1e1; border-radius: 10px;"
+                        >
+                          <tr>
+                            <td align="center" style="padding: 18px 16px;">
+                              <p class="muted" style="margin: 0 0 8px; color: #737373; font-size: 11px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;">
+                                Or use this verification code
+                              </p>
+                              <p class="code" style="margin: 0; color: #171717; font-size: 30px; font-weight: 700; letter-spacing: 7px; line-height: 1.3;">
+                                <%= codeValue %>
+                              </p>
+                            </td>
+                          </tr>
+                        </table>
+                      <% } %>
+
+                      <p class="muted" style="margin: 0 0 26px; color: #737373; font-size: 13px; line-height: 1.6;">
+                        This verification expires in <%= expiry %> minutes. If you did not create an account, you can safely ignore this email.
+                      </p>
+
+                      <% if (showLink) { %>
+                        <div style="border-top: 1px solid #e5e5e5; padding-top: 22px;">
+                          <p class="muted" style="margin: 0 0 8px; color: #737373; font-size: 12px; line-height: 1.5;">
+                            Button not working?
+                          </p>
+                          <p style="margin: 0; word-break: break-all;">
+                            <a href="<%= actionUrl %>" target="_blank" style="color: #171717; font-size: 12px; line-height: 1.5; text-decoration: underline;">
+                              <%= actionUrl %>
+                            </a>
+                          </p>
+                        </div>
+                      <% } %>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr>
+              <td align="center" style="padding: 22px 20px 0;">
+                <p class="footer-copy" style="margin: 0; color: #8a8a8a; font-size: 12px; line-height: 1.6;">
+                  &copy; <%= new Date().getFullYear() %> <%= productName %>. All rights reserved.
+                </p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

@@ -34,7 +34,7 @@ validateStartupConfig();
 // production defaults stay conservative.
 const globalApiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 100, // Limit each IP to 100 requests per window
+  max: Number(process.env.RATE_LIMIT_GLOBAL_MAX) || 200, // Limit each IP to 200 requests per window
   standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   // Fall back to the socket address when req.ip is undefined (direct
@@ -54,7 +54,7 @@ const globalApiLimiter = rateLimit({
 // lock users out of login for 15 minutes.
 const authLimiter = rateLimit({
   windowMs: 5 * 60 * 1000, // 15 minutes
-  max: Number(process.env.RATE_LIMIT_AUTH_MAX) || 20, // Strict limit: max 20 auth attempts per IP per 15 mins
+  max: Number(process.env.RATE_LIMIT_AUTH_MAX) || 60, // Strict limit: max 60 auth attempts per IP per 15 mins
   standardHeaders: true,
   legacyHeaders: false,
   // NOTE: the ipKeyGenerator(..) call must stay inline here (see above).

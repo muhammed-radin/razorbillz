@@ -19,6 +19,8 @@ import {
   migrateOldUserToNewUser,
 } from "./auth.migrate.js";
 import { ac, ecommerceRoles } from "./permissions.js";
+import sendEmail from "./mailer.js";
+import storeConfig from "../shared/store.config.js";
 
 let authInstance = null;
 
@@ -234,11 +236,44 @@ export default function createAuth(db) {
         // Null
       }),
     },
+    emailVerification: {
+      autoSignInAfterVerification: true,
+      sendOnSignUp: false, // Disable automatic email verification on sign-up
+      sendVerificationEmail: async ({ user, url, token }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Verify your email for " + storeConfig.brand.name.en,
+          templateName: "verification.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            verificationType: "link",
+            verificationUrl: url,
+            code: "",
+            expiryMinutes: 15,
+            logoUrl: storeConfig.assets.ogLogo32,
+            name: decrypt(user.name) || decrypt(user.email).split("@")[0],
+          },
+        });
+      },
+    },
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
       onExistingUserSignUp: async ({ user }, req) => {
         // Custom logic for handling existing users during sign-up
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Sign-up attempt with your email",
+          templateName: "signup-attempt.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            logoUrl: storeConfig.assets.ogLogo32,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            actionUrl: process.env.FRONTEND_URL,
+            actionLabel: "Go to " + storeConfig.brand.name.en,
+          },
+        });
         throw new APIError(
           "BAD_REQUEST",
           "User already exists. Please log-in instead.",
@@ -248,11 +283,31 @@ export default function createAuth(db) {
           400,
         );
       },
+
       minPasswordLength: 8,
+      revokeSessionsOnPasswordReset: true,
+      resetPasswordTokenExpiresIn: 15 * 60, // 15 minutes in seconds
+      sendResetPassword: async ({ user, url }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Reset your " + storeConfig.brand.name.en + " password",
+          templateName: "reset-password.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            logoUrl: storeConfig.assets.ogLogo32,
+            actionUrl: url,
+            actionLabel: "Reset password",
+            expiryMinutes: 15,
+          },
+        });
+      },
     },
     plugins: [
       anonymous({
-        emailDomainName: "guest.razorbills.app",
+        emailDomainName:
+          "guest." + storeConfig.brand.name.en.toLowerCase() + ".app",
         generateName: () =>
           decrypt(`Guest-${Math.floor(Math.random() * 100000)}`),
         onLinkAccount: async ({ anonymousUser, newUser }) => {

@@ -1,0 +1,196 @@
+<%
+  const productName = locals.appName || "RazorBills";
+  const logoUrl = locals.logoUrl || locals.logo;
+  const logoAlt = locals.logoAlt || productName;
+  const recipientName = locals.name || "there";
+  const customerEmail = locals.email;
+  const eventType = locals.eventType || "order-placed";
+  const eventDetails = {
+    "order-placed": {
+      eyebrow: "Order received",
+      title: "Your order is on its way",
+      message: "Thanks for shopping with us. We have received your order and will keep you updated as it moves forward.",
+    },
+    confirmed: {
+      eyebrow: "Order confirmed",
+      title: "Your order is confirmed",
+      message: "Great news. Your order has been confirmed and our team is preparing it for the next step.",
+    },
+    shipped: {
+      eyebrow: "Order shipped",
+      title: "Your order is on the move",
+      message: "Your package has left us and is making its way to you.",
+    },
+    returned: {
+      eyebrow: "Return received",
+      title: "Your return is being processed",
+      message: "We have received your return request. We will let you know as soon as it is reviewed.",
+    },
+    completed: {
+      eyebrow: "Order completed",
+      title: "Thanks for shopping with us",
+      message: "Your order has been completed. We hope you enjoy your purchase.",
+    },
+    refunded: {
+      eyebrow: "Refund processed",
+      title: "Your refund is on its way",
+      message: "Your refund has been processed. Depending on your payment provider, it may take a few business days to appear.",
+    },
+    cart: {
+      eyebrow: "Your cart is waiting",
+      title: "Still thinking it over?",
+      message: "The items you liked are still in your cart. Check out now before they are gone.",
+    },
+    suggestions: {
+      eyebrow: "Picked for you",
+      title: "A few things you may like",
+      message: "We found some products that match your taste. Take a look at what we picked for you.",
+    },
+    "payment-success": {
+      eyebrow: "Payment successful",
+      title: "Your payment went through",
+      message: "Thanks. We have successfully received your payment and your order is being processed.",
+    },
+    "payment-failed": {
+      eyebrow: "Payment unsuccessful",
+      title: "We could not process your payment",
+      message: "Your payment did not go through. You can try again using the button below.",
+    },
+  };
+  const details = eventDetails[eventType] || eventDetails["order-placed"];
+  const orderNumber = locals.orderNumber || locals.orderId;
+  const orderDate = locals.orderDate || locals.date;
+  const items = Array.isArray(locals.items) ? locals.items : [];
+  const products = Array.isArray(locals.products) ? locals.products : [];
+  const currency = locals.currency || "INR";
+  const total = locals.total ?? locals.totalAmount ?? locals.amount;
+  const actionUrl = locals.actionUrl || locals.orderUrl || locals.checkoutUrl || locals.shopUrl;
+  const actionLabel = locals.actionLabel || (eventType === "cart" ? "Complete checkout" : "View details");
+  const trackingUrl = locals.trackingUrl;
+  const formatMoney = (value) => {
+    if (value === undefined || value === null || value === "") return "";
+    try {
+      return new Intl.NumberFormat(locals.locale || "en-IN", {
+        style: "currency",
+        currency,
+        maximumFractionDigits: 2,
+      }).format(Number(value));
+    } catch {
+      return `${currency} ${value}`;
+    }
+  };
+  const displayDate = orderDate
+    ? new Date(orderDate).toLocaleDateString(locals.locale || "en-IN", {
+        day: "numeric",
+        month: "short",
+        year: "numeric",
+      })
+    : "";
+%>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="supported-color-schemes" content="light dark" />
+    <title><%= details.title %> | <%= productName %></title>
+    <style>
+      @media only screen and (max-width: 620px) {
+        .email-shell { width: 100% !important; }
+        .email-content { padding: 36px 24px !important; }
+        .heading { font-size: 28px !important; }
+        .item-image { width: 48px !important; height: 48px !important; }
+        .item-name { font-size: 13px !important; }
+      }
+      @media (prefers-color-scheme: dark) {
+        .email-body { background-color: #111111 !important; }
+        .email-card, .data-panel, .product-card { background-color: #1d1d1d !important; }
+        .heading, .body-copy, .strong-text { color: #f5f5f5 !important; }
+        .muted, .footer-copy, .item-meta { color: #a7a7a7 !important; }
+        .line { border-color: #3a3a3a !important; }
+      }
+    </style>
+  </head>
+  <body class="email-body" style="margin: 0; padding: 0; background-color: #f2f2f2; font-family: Arial, Helvetica, sans-serif; color: #171717;">
+    <div style="display: none; max-height: 0; overflow: hidden; opacity: 0;">
+      <%= details.message %>
+    </div>
+    <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="background-color: #f2f2f2;">
+      <tr>
+        <td align="center" style="padding: 32px 16px;">
+          <table role="presentation" class="email-shell" width="600" border="0" cellspacing="0" cellpadding="0" style="width: 100%; max-width: 600px;">
+            <tr>
+              <td class="email-card" style="background-color: #ffffff; border: 1px solid #dedede; border-radius: 16px; overflow: hidden;">
+                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0">
+                  <tr><td style="height: 6px; background-color: #171717; font-size: 0; line-height: 0;">&nbsp;</td></tr>
+                  <tr>
+                    <td class="email-content" style="padding: 48px 56px 44px;">
+                      <div style="margin-bottom: 34px;">
+                        <% if (logoUrl) { %>
+                          <img src="<%= logoUrl %>" alt="<%= logoAlt %>" width="36" height="36" style="display: inline-block; width: 36px; height: 36px; margin: 0 10px 0 0; border-radius: 8px; vertical-align: middle;" />
+                        <% } %>
+                        <span style="display: inline-block; padding: 9px 12px; border: 1px solid #d2d2d2; border-radius: 8px; color: #171717; font-size: 13px; font-weight: 700; letter-spacing: 2px; line-height: 1; text-transform: uppercase; vertical-align: middle;"><%= productName %></span>
+                      </div>
+
+                      <p class="muted" style="margin: 0 0 12px; color: #737373; font-size: 14px; line-height: 1.5;"><%= details.eyebrow %></p>
+                      <h1 class="heading" style="margin: 0 0 18px; color: #171717; font-size: 34px; font-weight: 700; letter-spacing: -0.8px; line-height: 1.15;"><%= details.title %></h1>
+                      <p class="body-copy" style="margin: 0 0 28px; color: #4a4a4a; font-size: 16px; line-height: 1.7;">Hi <%= recipientName %>, <%= details.message %></p>
+
+                      <% if (orderNumber || displayDate) { %>
+                        <table role="presentation" class="data-panel" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px; background-color: #f6f6f6; border: 1px solid #e1e1e1; border-radius: 10px;">
+                          <tr>
+                            <% if (orderNumber) { %><td style="padding: 16px;"><p class="muted" style="margin: 0 0 5px; color: #737373; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Order</p><p class="strong-text" style="margin: 0; color: #171717; font-size: 14px; font-weight: 700;"><%= orderNumber %></p></td><% } %>
+                            <% if (displayDate) { %><td align="right" style="padding: 16px;"><p class="muted" style="margin: 0 0 5px; color: #737373; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;">Date</p><p class="strong-text" style="margin: 0; color: #171717; font-size: 14px; font-weight: 700;"><%= displayDate %></p></td><% } %>
+                          </tr>
+                        </table>
+                      <% } %>
+
+                      <% if (items.length) { %>
+                        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 22px;">
+                          <% items.forEach((item) => { %>
+                            <tr>
+                              <td class="line" style="padding: 12px 0; border-bottom: 1px solid #e5e5e5;">
+                                <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0"><tr>
+                                  <td width="58" valign="top"><% if (item.image || item.imageUrl) { %><img class="item-image" src="<%= item.image || item.imageUrl %>" alt="<%= item.name || "Product" %>" width="52" height="52" style="display: block; width: 52px; height: 52px; border-radius: 8px; object-fit: cover;" /><% } else { %><div style="width: 52px; height: 52px; border-radius: 8px; background-color: #eeeeee;">&nbsp;</div><% } %></td>
+                                  <td valign="middle" style="padding-left: 12px;"><p class="strong-text item-name" style="margin: 0 0 4px; color: #171717; font-size: 14px; font-weight: 700;"><%= item.name || item.title || "Product" %></p><p class="item-meta" style="margin: 0; color: #737373; font-size: 12px;">Qty: <%= item.quantity || 1 %></p></td>
+                                  <td align="right" valign="middle" class="strong-text" style="color: #171717; font-size: 14px; font-weight: 700;"><%= formatMoney(item.total ?? item.price) %></td>
+                                </tr></table>
+                              </td>
+                            </tr>
+                          <% }) %>
+                        </table>
+                      <% } %>
+
+                      <% if (total !== undefined && total !== null) { %>
+                        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px;"><tr><td class="muted" style="color: #737373; font-size: 14px;">Total</td><td align="right" class="strong-text" style="color: #171717; font-size: 18px; font-weight: 700;"><%= formatMoney(total) %></td></tr></table>
+                      <% } %>
+
+                      <% if (products.length) { %>
+                        <table role="presentation" width="100%" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px;">
+                          <tr>
+                            <% products.slice(0, 3).forEach((product) => { %>
+                              <td class="product-card" width="33%" valign="top" style="padding: 0 5px; background-color: #f6f6f6; border: 1px solid #e1e1e1; border-radius: 10px;"><a href="<%= product.url || product.link || "#" %>" style="color: #171717; text-decoration: none;"><% if (product.image || product.imageUrl) { %><img src="<%= product.image || product.imageUrl %>" alt="<%= product.name || product.title || "Product" %>" width="100%" height="120" style="display: block; width: 100%; height: 120px; object-fit: cover; border-radius: 8px 8px 0 0;" /><% } %><p class="strong-text" style="margin: 10px 8px 4px; color: #171717; font-size: 13px; font-weight: 700;"><%= product.name || product.title || "Product" %></p><p class="muted" style="margin: 0 8px 12px; color: #737373; font-size: 12px;"><%= formatMoney(product.price) %></p></a></td>
+                            <% }) %>
+                          </tr>
+                        </table>
+                      <% } %>
+
+                      <% if (actionUrl) { %>
+                        <table role="presentation" border="0" cellspacing="0" cellpadding="0" style="margin-bottom: 28px;"><tr><td style="border-radius: 8px; background-color: #171717;"><a href="<%= actionUrl %>" target="_blank" style="display: inline-block; padding: 15px 24px; border: 1px solid #171717; border-radius: 8px; color: #ffffff; font-size: 15px; font-weight: 700; line-height: 1; text-decoration: none;"><%= actionLabel %>&nbsp; &rarr;</a></td></tr></table>
+                      <% } %>
+                      <% if (trackingUrl) { %><p class="muted" style="margin: 0 0 26px; color: #737373; font-size: 13px; line-height: 1.6;">Track your package <a href="<%= trackingUrl %>" target="_blank" style="color: #171717; text-decoration: underline;">here</a>.</p><% } %>
+                      <% if (customerEmail) { %><p class="muted" style="margin: 0 0 26px; color: #737373; font-size: 13px; line-height: 1.6;">This email was sent to <%= customerEmail %>.</p><% } %>
+                      <p class="muted" style="margin: 0; color: #737373; font-size: 13px; line-height: 1.6;">If you have any questions, reply to this email and our team will help.</p>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+            <tr><td align="center" style="padding: 22px 20px 0;"><p class="footer-copy" style="margin: 0; color: #8a8a8a; font-size: 12px; line-height: 1.6;">&copy; <%= new Date().getFullYear() %> <%= productName %>. All rights reserved.</p></td></tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>

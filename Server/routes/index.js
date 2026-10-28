@@ -18,6 +18,8 @@ import { evt } from "../utils/events.manage.js";
 import logsRouter from "./logs.js";
 import analyticsRouter from "./analytics.js";
 import storeRouter from "./store.js";
+import sendEmail from "../utils/mailer.js";
+import { generateHashLink, origin } from "../shared/utils/route-util.js";
 
 const router = express.Router();
 
@@ -71,4 +73,12 @@ router.use("/logs", requireAuth, logsRouter);
 /* Analytics routes */
 router.use("/analytics", requireAuth, analyticsRouter);
 
+/* Redirect to front-end */
+router.get("/redirect-app/verify-email", (req, res) => {
+  res.redirect(
+    origin(process.env.FRONTEND_URL || "http://localhost:5173")
+      .query({ action: "verify-email", status: "success" }, null, true)
+      .hashPathURL(),
+  );
+});
 export default router;
