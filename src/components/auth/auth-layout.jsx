@@ -1,9 +1,9 @@
 import { Link } from "react-router-dom";
 import { StoreMeta } from "@/components/store-meta";
-import { ArrowLeft, CheckCircle2, Shield, Zap, Sparkles } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Shield, Zap, Sparkles, KeyRound } from "lucide-react";
 
 /**
- * AuthLayout for Login & Signup.
+ * AuthLayout for Login, Signup & Reset Password.
  * Features:
  * - Left Hero: Pure, clean, and distraction-free dark showcase panel with elegant typography.
  *   Zero background shapes, zero distracting animations.
@@ -17,7 +17,92 @@ export function AuthLayout({
   type = "login",
   children,
 }) {
-  const isLogin = type === "login";
+  const showcaseConfig = {
+    login: {
+      tag: "Smarter Electronics Shopping",
+      icon: Sparkles,
+      title: "Welcome back to your tech sanctuary.",
+      description:
+        "Sign in to track orders, manage preferences, and access exclusive member deals.",
+      points: [
+        {
+          icon: Zap,
+          iconBg: "bg-primary/10 text-primary border-primary/20",
+          title: "Express Dispatch",
+          desc: "Fast doorstep delivery with live tracking on every order.",
+        },
+        {
+          icon: Shield,
+          iconBg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+          title: "Genuine & Protected",
+          desc: "100% authentic products backed by official warranties.",
+        },
+        {
+          icon: CheckCircle2,
+          iconBg: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+          title: "Encrypted & Private",
+          desc: "End-to-end 256-bit AES encryption protecting your personal data.",
+        },
+      ],
+    },
+    signup: {
+      tag: "Join RazorBillz Club",
+      icon: Sparkles,
+      title: "Everything you need, engineered for precision.",
+      description:
+        "Create an account in seconds to unlock member pricing, live package tracking, and 1-click checkout.",
+      points: [
+        {
+          icon: Zap,
+          iconBg: "bg-primary/10 text-primary border-primary/20",
+          title: "Express Dispatch",
+          desc: "Fast doorstep delivery with live tracking on every order.",
+        },
+        {
+          icon: Shield,
+          iconBg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+          title: "Genuine & Protected",
+          desc: "100% authentic products backed by official warranties.",
+        },
+        {
+          icon: CheckCircle2,
+          iconBg: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+          title: "Encrypted & Private",
+          desc: "End-to-end 256-bit AES encryption protecting your personal data.",
+        },
+      ],
+    },
+    "reset-password": {
+      tag: "Account Recovery & Security",
+      icon: KeyRound,
+      title: "Restore access to your account securely.",
+      description:
+        "Reset your password with verified cryptographic token authentication and enterprise-grade encryption.",
+      points: [
+        {
+          icon: Shield,
+          iconBg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20",
+          title: "Verified Identity Protection",
+          desc: "Cryptographic reset verification for safe account recovery.",
+        },
+        {
+          icon: Zap,
+          iconBg: "bg-primary/10 text-primary border-primary/20",
+          title: "Instant Session Sync",
+          desc: "Securely updates your credentials across all your devices.",
+        },
+        {
+          icon: CheckCircle2,
+          iconBg: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+          title: "End-to-End Encrypted",
+          desc: "256-bit encryption safeguards your account and payment data.",
+        },
+      ],
+    },
+  };
+
+  const showcase = showcaseConfig[type] || showcaseConfig.login;
+  const TagIcon = showcase.icon;
 
   return (
     <>
@@ -65,69 +150,44 @@ export function AuthLayout({
           <div className="relative z-10 my-auto py-6 max-w-md space-y-6 animate-[auth-fade-in_0.5s_ease-out]">
             {/* Pill tag */}
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-zinc-900/90 border border-border/40 text-zinc-300 text-xs font-medium shadow-sm">
-              <Sparkles className="w-3.5 h-3.5 text-primary" />
-              <span>Smarter Electronics Shopping</span>
+              <TagIcon className="w-3.5 h-3.5 text-primary" />
+              <span>{showcase.tag}</span>
             </div>
 
             {/* Title & Description */}
             <div className="space-y-2.5">
               <h2 className="text-2xl xl:text-3xl font-bold tracking-tight text-white leading-tight">
-                {isLogin
-                  ? "Welcome back to your tech sanctuary."
-                  : "Everything you need, engineered for precision."}
+                {showcase.title}
               </h2>
 
               <p className="text-zinc-400 text-xs xl:text-sm leading-relaxed">
-                {isLogin
-                  ? "Sign in to track orders, manage preferences, and access exclusive member deals."
-                  : "Create an account in seconds to unlock member pricing, live package tracking, and 1-click checkout."}
+                {showcase.description}
               </p>
             </div>
 
             {/* 3 Clean points */}
             <div className="space-y-3 pt-1">
-              <div className="flex items-start gap-3 text-xs xl:text-sm text-zinc-300">
-                <div className="mt-0.5 p-1 rounded-md bg-primary/10 text-primary border border-primary/20">
-                  <Zap className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <span className="font-medium text-white">
-                    Express Dispatch
-                  </span>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    Fast doorstep delivery with live tracking on every order.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 text-xs xl:text-sm text-zinc-300">
-                <div className="mt-0.5 p-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                  <Shield className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <span className="font-medium text-white">
-                    Genuine & Protected
-                  </span>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    100% authentic products backed by official warranties.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-start gap-3 text-xs xl:text-sm text-zinc-300">
-                <div className="mt-0.5 p-1 rounded-md bg-blue-500/10 text-blue-400 border border-blue-500/20">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <span className="font-medium text-white">
-                    Encrypted & Private
-                  </span>
-                  <p className="text-xs text-zinc-400 mt-0.5">
-                    End-to-end 256-bit AES encryption protecting your personal
-                    data.
-                  </p>
-                </div>
-              </div>
+              {showcase.points.map((pt, idx) => {
+                const PtIcon = pt.icon;
+                return (
+                  <div
+                    key={idx}
+                    className="flex items-start gap-3 text-xs xl:text-sm text-zinc-300"
+                  >
+                    <div
+                      className={`mt-0.5 p-1 rounded-md border ${pt.iconBg}`}
+                    >
+                      <PtIcon className="w-3.5 h-3.5" />
+                    </div>
+                    <div>
+                      <span className="font-medium text-white">
+                        {pt.title}
+                      </span>
+                      <p className="text-xs text-zinc-400 mt-0.5">{pt.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

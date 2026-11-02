@@ -36,8 +36,12 @@ const router = createHashRouter([
           { path: "login", ...lazyRoute(() => import("@/pages/login/page")) },
           { path: "signup", ...lazyRoute(() => import("@/pages/signup/page")) },
           {
+            path: "reset-password",
+            ...lazyRoute(() => import("@/pages/reset-password/page")),
+          },
+          {
             path: "forgot-password",
-            ...lazyRoute(() => import("@/pages/forgot-password/page")),
+            ...lazyRoute(() => import("@/pages/reset-password/page")),
           },
           {
             path: "payment-success",

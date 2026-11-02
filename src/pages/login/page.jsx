@@ -106,7 +106,7 @@ const LoginPage = () => {
           if (email) {
             await authClient.forgotPassword({
               email,
-              redirectTo: origin().path("/forgot-password").hashPathURL(),
+              redirectTo: origin().path("/reset-password").hashPathURL(),
             });
             toast.success(
               t("auth.passwordResetEmailSent", {
@@ -334,7 +334,7 @@ const LoginPage = () => {
                       {t("auth.password", { defaultValue: "Password" })}
                     </FormLabel>
                     <Link
-                      to="/forgot-password"
+                      to="/reset-password"
                       className="text-[11px] sm:text-xs text-primary hover:underline underline-offset-4 font-medium transition-colors"
                       tabIndex={isSubmitting ? -1 : 0}
                     >

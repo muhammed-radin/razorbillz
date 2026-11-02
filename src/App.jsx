@@ -18,7 +18,12 @@ import { api } from "./utils/api";
 import { authClient } from "./lib/auth-client";
 import { openAuthenticationModal } from "./utils/signin-modal-required";
 
-const HIDE_CHROME_PATHS = ["/login", "/signup", "/forgot-password"];
+const HIDE_CHROME_PATHS = [
+  "/login",
+  "/signup",
+  "/reset-password",
+  "/forgot-password",
+];
 const GUEST_ACCESS_PATHS = [
   // main pages
   "/",
@@ -31,6 +36,7 @@ const GUEST_ACCESS_PATHS = [
   // auth
   "/login",
   "/signup",
+  "/reset-password",
   "/forgot-password",
 
   // policy pages
@@ -67,7 +73,7 @@ function App() {
       } else {
         if (HIDE_CHROME_PATHS.includes(location.pathname)) {
           setIsLoading(false);
-          return; // Allow access to login, signup, and forgot-password pages
+          return; // Allow access to login, signup, and reset-password pages
         }
         alert
           .confirm({
