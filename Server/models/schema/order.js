@@ -306,10 +306,10 @@ export const OrderPaymentSchema = new Schema(
     },
 
     /* Razorpay references (never store secrets) */
-    razorpayOrderId: { type: String, default: null, trim: true, index: true },
-    razorpayPaymentId: { type: String, default: null, trim: true, index: true },
+    razorpayOrderId: { type: String, default: null, trim: true },
+    razorpayPaymentId: { type: String, default: null, trim: true },
     razorpaySignature: { type: String, default: null, trim: true },
-    idempotencyKey: { type: String, default: null, trim: true, index: true },
+    idempotencyKey: { type: String, default: null, trim: true },
     attempts: { type: Number, default: 0, min: 0 },
     verifiedAt: { type: Date, default: null },
     failureReason: {
@@ -423,7 +423,7 @@ export const OrderFulfillmentSchema = new Schema(
     /* Shipmozo references (server-side only) */
     shipmozoOrderId: { type: String, default: null, trim: true, index: true },
     shipmentId: { type: String, default: null, trim: true },
-    awb: { type: String, default: null, trim: true, index: true },
+    awb: { type: String, default: null, trim: true },
     courierName: { type: String, default: null, trim: true },
     trackingUrl: { type: String, default: null, trim: true },
     labelUrl: { type: String, default: null, trim: true },
@@ -785,7 +785,6 @@ export const OrderSchema = new Schema(
       type: String,
       default: null,
       trim: true,
-      index: true,
     },
 
     codFee: { type: Number, default: 0, min: 0 },

@@ -46,7 +46,7 @@ export const PaymentAttemptSchema = new Schema(
     shippingAddress: { type: Schema.Types.Mixed, required: true },
     billingAddress: { type: Schema.Types.Mixed, required: true },
     razorpayOrderId: { type: String, default: null, trim: true, index: true },
-    razorpayPaymentId: { type: String, default: null, trim: true, index: true },
+    razorpayPaymentId: { type: String, default: null, trim: true },
     legacyOrderId: { type: String, default: null, trim: true, index: true },
     resultingOrderId: { type: String, default: null, trim: true },
     status: {

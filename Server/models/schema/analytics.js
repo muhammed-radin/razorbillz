@@ -84,7 +84,6 @@ const dailyAnalyticsSchema = mongoose.Schema(
       type: String,
       required: true,
       default: () => new Date().toISOString().split("T")[0],
-      unique: true,
     }, // YYYY-MM-DD
     date: { type: Date, required: true, unique: true },
 
