@@ -1,4 +1,3 @@
-import { db } from "./db.js";
 import {
   OrderModel,
   OrderStatus,
@@ -126,20 +125,32 @@ export async function createOrderRecord({
       Evts.ORDER_PLACED,
       new OrderEvent({ type: Evts.ORDER_PLACED, order: order.toObject() }),
     );
+
+    if (markPaid) {
+      evt.fire(
+        Evts.ORDER_PAID,
+        new OrderEvent({ type: Evts.ORDER_PAID, order: order.toObject() }),
+      );
+    }
+
     if (method === PaymentMethod.COD) {
-      evt.fire(Evts.COD_CREATED, { orderId: order.id, userId });
-      evt.fire(Evts.COD_COLLECTION_PENDING, { orderId: order.id, userId });
+      evt.fire(Evts.COD_CREATED, {
+        orderId: order.id,
+        userId,
+        amount: order.totalAmount,
+      });
+      evt.fire(Evts.COD_COLLECTION_PENDING, {
+        orderId: order.id,
+        userId,
+        amount: order.totalAmount,
+      });
     }
   } catch (err) {
     console.error("[orderFactory] analytics event failed:", err?.message);
   }
-  try {
-    await db
-      .collection("users")
-      .updateOne({ id: userId }, { $inc: { totalOrders: 1 } });
-  } catch (err) {
-    console.error("[orderFactory] user stats update failed:", err?.message);
-  }
+
+  // totalOrders/totalSpent are maintained by the buffered user-stats
+  // listener for ORDER_PLACED / COD_COLLECTED / ORDER_REFUNDED.
   return order;
 }
 

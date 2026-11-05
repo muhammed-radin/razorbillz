@@ -905,8 +905,8 @@ OrderSchema.methods.markPaymentFailed = async function (reason = null) {
   return this.save();
 };
 
-/* COD: mark cash collected only via trusted admin workflow.
- * Never marks payment.status=paid; COD uses codStatus independently. */
+/* COD: mark cash collected only via trusted admin workflow. Collection
+ * marks the payment paid (once) so refunds and paid-order reports work. */
 OrderSchema.methods.markCodCollected = async function ({
   actorId = null,
   amount = null,
@@ -915,6 +915,13 @@ OrderSchema.methods.markCodCollected = async function ({
     throw new Error("Only COD orders can record cash collection.");
   }
   if (this.payment.codStatus === CODStatus.COLLECTED) {
+    // Legacy records collected before this rule may still say pending;
+    // repair the payment status without touching the collection fields.
+    if (this.payment.status === PaymentStatus.PENDING) {
+      this.payment.status = PaymentStatus.PAID;
+      this.payment.paidAt = this.payment.paidAt || new Date();
+      return this.save();
+    }
     return this; // idempotent
   }
   this.payment.codStatus = CODStatus.COLLECTED;
@@ -923,6 +930,15 @@ OrderSchema.methods.markCodCollected = async function ({
   if (amount !== null && Number.isFinite(Number(amount))) {
     this.payment.amountPaid = Number(amount);
   }
+
+  // Cash collected means the order is actually paid. Keeping the
+  // status at "pending" blocked refunds and made paid-order reports
+  // (and totalSpent reconciliation) treat collected COD as unpaid.
+  if (this.payment.status === PaymentStatus.PENDING) {
+    this.payment.status = PaymentStatus.PAID;
+    this.payment.paidAt = new Date();
+  }
+
   return this.save();
 };
 
@@ -1201,8 +1217,9 @@ OrderSchema.methods.completeReturn = async function ({ actorId = null } = {}) {
 
 OrderSchema.methods.canRefund = function () {
   return (
-    this.payment.status === PaymentStatus.PAID &&
-    this.getRemainingRefundAmount() > 0
+    [PaymentStatus.PAID, PaymentStatus.PARTIALLY_REFUNDED].includes(
+      this.payment.status,
+    ) && this.getRemainingRefundAmount() > 0
   );
 };
 

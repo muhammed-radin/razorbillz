@@ -9,7 +9,7 @@ import { useMemory } from "../utils/memory.js";
 import { priceOrderItems } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
 import { createOrderRecord, releaseOrderStock } from "../utils/orderFactory.js";
-import { evt, Evts } from "../utils/events.manage.js";
+import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
 import {
   OrderModel,
   OrderStatus,
@@ -25,6 +25,30 @@ import {
 /* =========================================================
  * ORDER API ENDPOINTS
  * ========================================================= */
+
+/* Fire a lifecycle event with the full order snapshot so analytics,
+ * user stats and activity logs all see the same authoritative data. */
+function fireOrderEvent(type, order, extra = {}) {
+  try {
+    if (!order) return;
+    const plain =
+      typeof order.toObject === "function" ? order.toObject() : order;
+    const event = new OrderEvent({ type, order: plain });
+    Object.assign(event, extra);
+    evt.fire(type, event);
+  } catch (error) {
+    console.error("[orders] event fire failed:", error?.message);
+  }
+}
+
+function orderStatusEventType(status) {
+  if (status === OrderStatus.DELIVERED) return Evts.ORDER_COMPLETED;
+  if (status === OrderStatus.CANCELLED) return Evts.ORDER_CANCELLED;
+  if (status === OrderStatus.RETURN_REQUESTED) {
+    return Evts.ORDER_RETURN_REQUESTED;
+  }
+  return Evts.ORDER_STATUS_CHANGED;
+}
 
 /*
  * GET    /orders/list
@@ -783,9 +807,9 @@ router.post("/:id/cancel", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    evt.fire(Evts.ORDER_CANCELLED, {
-      orderId: order.id,
-      userId: order.userId,
+    // A cancellation *request* is not a cancellation yet; only approval
+    // moves the order out of circulation (and decrements counters).
+    fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
       requested: true,
       reason,
     });
@@ -835,16 +859,14 @@ router.post(
       // Terminal cancellation restores reserved inventory (best-effort).
       await releaseOrderStock(updatedOrder);
 
-      evt.fire(Evts.ORDER_CANCELLED, {
-        orderId: order.id,
+      fireOrderEvent(Evts.ORDER_CANCELLED, updatedOrder, {
         approved: true,
         actorId: req.user?.id ?? null,
       });
       if (updatedOrder.payment.status === PaymentStatus.PAID) {
         // Prepaid cancellation only REQUESTS review — a refund is a
         // separate verified step (POST /:id/refund). Never implied.
-        evt.fire(Evts.ORDER_STATUS_CHANGED, {
-          orderId: order.id,
+        fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
           note: "cancelled while paid — refund pending admin action",
         });
       }
@@ -954,6 +976,15 @@ router.post(
         validate: validate !== false,
       });
 
+      fireOrderEvent(orderStatusEventType(status), updatedOrder, {
+        note,
+        actorId: req.user?.id ?? null,
+      });
+
+      if (status === OrderStatus.CANCELLED) {
+        await releaseOrderStock(updatedOrder);
+      }
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -991,6 +1022,8 @@ router.post(
         });
       }
 
+      const wasPaid = order.payment.status === PaymentStatus.PAID;
+
       const updatedOrder = await order.markAsPaid({
         transactionId: req.body?.transactionId ?? null,
 
@@ -999,6 +1032,11 @@ router.post(
             ? Number(req.body.amount)
             : order.totalAmount,
       });
+
+      // Idempotent endpoint: never count the same payment twice.
+      if (!wasPaid) {
+        fireOrderEvent(Evts.ORDER_PAID, updatedOrder);
+      }
 
       return res.json({
         success: true,
@@ -1040,6 +1078,10 @@ router.post(
       const updatedOrder = await order.markPaymentFailed(
         req.body?.reason ?? null,
       );
+
+      fireOrderEvent(Evts.PAYMENT_FAILED, updatedOrder, {
+        reason: req.body?.reason ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1083,6 +1125,11 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order processing",
+        actorId: req.user?.id ?? null,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1121,6 +1168,11 @@ router.post(
       }
 
       const updatedOrder = await order.markAsPacked();
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order packed",
+        actorId: req.user?.id ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1175,6 +1227,11 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order shipped",
+        actorId: req.user?.id ?? null,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1214,6 +1271,10 @@ router.post(
 
       const updatedOrder = await order.markAsDelivered({
         actor: "admin",
+        actorId: req.user?.id ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_COMPLETED, updatedOrder, {
         actorId: req.user?.id ?? null,
       });
 
@@ -1304,11 +1365,7 @@ router.post("/:id/return", requireAuth, passUserAuth, async (req, res) => {
 
     // A request never marks items returned, refunds payment, or
     // triggers courier pickup — admin review is required first.
-    evt.fire(Evts.ORDER_RETURN_REQUESTED, {
-      orderId: order.id,
-      userId: order.userId,
-      reason,
-    });
+    fireOrderEvent(Evts.ORDER_RETURN_REQUESTED, updatedOrder, { reason });
 
     return res.json({
       success: true,
@@ -1430,6 +1487,10 @@ router.post(
 
       const updatedOrder = await order.markReturnReceived();
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return package received",
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1469,6 +1530,10 @@ router.post(
 
       const updatedOrder = await order.completeReturn({
         actorId: req.user?.id ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return completed",
       });
 
       return res.json({
@@ -1527,6 +1592,11 @@ router.post(
         reason: req.body?.reason ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "refund requested",
+        amount,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1566,6 +1636,10 @@ router.post(
 
       const updatedOrder = await order.completeRefund({
         transactionId: req.body?.transactionId ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_REFUNDED, updatedOrder, {
+        amount: updatedOrder.refund?.amount ?? 0,
       });
 
       return res.json({

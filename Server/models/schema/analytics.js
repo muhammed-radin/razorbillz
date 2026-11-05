@@ -13,6 +13,7 @@ const siteAnalyticsSchema = mongoose.Schema(
         desktop: { type: Number, default: 0 },
         mobile: { type: Number, default: 0 },
         tablet: { type: Number, default: 0 },
+        other: { type: Number, default: 0 },
       },
       sources: {
         chrome: { type: Number, default: 0 },
@@ -96,6 +97,7 @@ const dailyAnalyticsSchema = mongoose.Schema(
         desktop: { type: Number, default: 0 },
         mobile: { type: Number, default: 0 },
         tablet: { type: Number, default: 0 },
+        other: { type: Number, default: 0 },
       },
       sources: {
         chrome: { type: Number, default: 0 },
@@ -179,6 +181,12 @@ const analyticEventSchema = new mongoose.Schema(
 
     // Useful for traffic/session calculations
     sessionId: { type: String, default: null, index: true },
+
+    // Guest vs authenticated traffic (used by unique-viewer queries)
+    isGuest: { type: Boolean, default: false, index: true },
+
+    // Error flag (used by reconciliation for events.errors)
+    isError: { type: Boolean, default: false },
 
     // Page/product/etc.
     path: { type: String, default: null },

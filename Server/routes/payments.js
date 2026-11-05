@@ -9,6 +9,7 @@ import {
   OrderModel,
   PaymentStatus,
   PaymentMethod,
+  CODStatus,
 } from "../models/schema/order.js";
 import {
   PaymentAttemptModel,
@@ -222,7 +223,7 @@ async function claimAttempt(attemptId, razorpayPaymentId) {
         razorpayPaymentId,
       },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
 }
 
@@ -283,6 +284,11 @@ async function confirmAttemptOrder(attempt, { razorpayPaymentId, razorpaySignatu
       order = await legacy.markAsPaid({
         transactionId: razorpayPaymentId,
         amount: legacy.totalAmount,
+      });
+      safeEvent(Evts.ORDER_PAID, {
+        orderId: order.id,
+        userId: order.userId,
+        amount: order.payment?.amountPaid ?? order.totalAmount,
       });
     } else {
       order = await createOrderRecord({
@@ -501,8 +507,15 @@ router.post(
                 transactionId: paymentEntity.id,
                 amount: order.totalAmount,
               });
+              safeEvent(Evts.ORDER_PAID, {
+                orderId: order.id,
+                userId: order.userId,
+                amount: order.payment?.amountPaid ?? order.totalAmount,
+              });
               safeEvent(Evts.PAYMENT_SUCCEEDED, {
                 orderId: order.id,
+                userId: order.userId,
+                amount: order.payment?.amountPaid ?? order.totalAmount,
                 source: "webhook",
               });
             } catch (err) {
@@ -633,11 +646,22 @@ router.post(
     const order = await OrderModel.findOne({ id: req.params.id });
     if (!order) throw Errors.notFound("Order not found.");
     try {
+      const alreadyCollected =
+        order.payment?.codStatus === CODStatus.COLLECTED;
       const updated = await order.markCodCollected({
         actorId: req.user?.id ?? null,
         amount: req.body?.amount ?? order.totalAmount,
       });
-      safeEvent(Evts.COD_COLLECTED, { orderId: order.id });
+      // Idempotent endpoint: repeated clicks must not add revenue twice.
+      if (!alreadyCollected) {
+        safeEvent(Evts.COD_COLLECTED, {
+          orderId: order.id,
+          userId: order.userId,
+          amount: Number(
+            req.body?.amount ?? updated.payment?.amountPaid ?? order.totalAmount,
+          ),
+        });
+      }
       return res.status(200).json({ success: true, order: updated });
     } catch (err) {
       safeEvent(Evts.COD_COLLECTION_FAILED, {

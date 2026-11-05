@@ -25,6 +25,7 @@ import {
 } from "./utils/middlewares/errorHandler.js";
 import { evt } from "./utils/events.manage.js";
 import tallyDebug from "./utils/debug.js";
+import { initJobs } from "./utils/jobs.js";
 import { storeConfig } from "./shared/store.config.js";
 
 validateStartupConfig();
@@ -143,6 +144,11 @@ if (
 
 // start api after db connection is established
 app.use("/api", checkDatabaseConnection, indexRouter);
+
+/* Register buffered-write workers once (agenda waits for Mongo). */
+initJobs().catch((error) => {
+  console.error("[jobs] failed to start:", error?.message);
+});
 
 // Unknown API routes -> JSON 404, then central error handler (last).
 app.use("/api", apiNotFound);

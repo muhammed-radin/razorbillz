@@ -28,12 +28,54 @@ Checkout → order → payment → shipment → delivery:
 8. `order_status_changed`, `order_create_failed` on lifecycle/failure paths.
 
 Pre-existing events (`order_updated/cancelled/completed/return_requested`,
-cart/wishlist/product/user/session events) are unchanged and still fire
-from their original call sites. New in this cycle:
-`checkout_started`, `order_status_changed`,
+cart/wishlist/product/user/session events) still fire from their original
+call sites and now feed the shared analytics engine described below.
+Product rating changes distinguish `product_rated` (first rating) from
+`product_rating_updated` (changed rating) and `product_unrated` (removed
+rating). New in this cycle: `checkout_started`, `order_status_changed`,
 `ticket_created/replied/resolved/reopened/closed` (ids only, never message
 bodies), `search_submitted` / `search_rate_limited` (taxonomy reserved;
 product search already emits `site_searched`).
+
+## Analytics pipeline (buffered, incremental)
+
+- Every event goes through one global listener. `activities` records keep
+  major events and operational/troubleshooting events; `analytics_events`
+  records the analytics subset used for counters and reporting.
+- Business routes never recalculate whole days. They append to in-memory
+  buffers and the engine applies `$inc` deltas, so free-tier databases see
+  batching instead of one write per request.
+- Agenda flushes buffered activities/events/counters and product
+  interaction metrics every few minutes. Ratings are flushed immediately
+  because stars/review counts are user-visible.
+- Daily and site counters are reconciled periodically from stored
+  analytics events to repair drift from lost batches. Reconciliation never
+  runs per request.
+- Guest sessions are traffic, not logged-in users: `users.loggedInUsers`
+  and `lastLogin` only move for authenticated accounts.
+- Activity records store ids, statuses, amounts and request paths only —
+  never request bodies or PII payloads.
+
+Counter rules for daily/site analytics:
+
+| Counter | Incremented by |
+| --- | --- |
+| `orders.total` / `orders.totalOrders` | `order_placed` (once per order) |
+| `orders.revenue` | `order_paid` + `cod_collected` − `order_refunded` |
+| `orders.delivered` | `order_completed` (admin or courier delivery) |
+| `orders.cancelled` / `orders.returned` | `order_cancelled` / `order_return_requested` |
+| `engagement.ratings` | `product_rated` +1, `product_unrated` −1 (updates do not count) |
+| `engagement.comments` / `reviews.total` | comment created +1, deleted −1 (edits do not count) |
+| `engagement.shares` / `engagement.wishlists` | share +1, wishlist add +1, wishlist remove −1 |
+| `products.views` | `product_viewed` (raw views; unique counts are separate) |
+| `traffic.uniqueUsers` / `uniqueGuests` | first `site_viewed` per user/guest per UTC day |
+
+User presentation fields are maintained by the same buffered pipeline:
+`lastLogin` and `currentlyLoggedIn` on session events, `totalOrders` on
+`order_placed`, and `totalSpent` on `order_paid` / `cod_collected` minus
+refunds. All are deduplicated by order id, and profile updates strip these
+server-owned fields so clients cannot overwrite them.
+
 
 ## Deduplication & double-counting rules
 

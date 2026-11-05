@@ -31,7 +31,7 @@ import {
   cancelShipment,
   pushReturnOrder,
 } from "../utils/shipmozo.js";
-import { evt, Evts } from "../utils/events.manage.js";
+import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
 
 const router = express.Router();
 
@@ -204,7 +204,10 @@ router.post(
           error: `Order must be confirmed/processing to create shipment (now: ${order.status})`,
         });
       }
-      safeEvent(Evts.SHIPMENT_CREATE_ATTEMPT, { orderId: order.id });
+      safeEvent(Evts.SHIPMENT_CREATE_ATTEMPT, {
+        orderId: order.id,
+        userId: order.userId,
+      });
 
       // 1. push-order (PDF response: { Info, order_id, reference_id })
       let payload;
@@ -225,6 +228,7 @@ router.post(
         await order.save();
         safeEvent(Evts.SHIPMENT_CREATE_FAILED, {
           orderId: order.id,
+          userId: order.userId,
           reason: order.fulfillment.shipmentFailure,
           stub: pushed?.stub === true,
         });
@@ -290,6 +294,7 @@ router.post(
       await order.save();
       safeEvent(Evts.SHIPMENT_CREATED, {
         orderId: order.id,
+        userId: order.userId,
         awb: order.fulfillment.awb,
       });
       return res.status(201).json({
@@ -371,19 +376,40 @@ router.get(
       if (latest.includes("deliver") && order.status === OrderStatus.SHIPPED) {
         try {
           await order.markAsDelivered({ actor: "system" });
-          safeEvent(Evts.SHIPMENT_DELIVERED, { orderId: order.id });
+          safeEvent(Evts.SHIPMENT_DELIVERED, {
+            orderId: order.id,
+            userId: order.userId,
+          });
+          // Keep the order lifecycle counter in sync with courier events.
+          safeEvent(
+            Evts.ORDER_COMPLETED,
+            new OrderEvent({
+              type: Evts.ORDER_COMPLETED,
+              order: order.toObject(),
+            }),
+          );
         } catch {
           // keep tracking data even if transition invalid
         }
       } else if (latest.includes("cancel")) {
-        safeEvent(Evts.SHIPMENT_CANCELLED, { orderId: order.id });
+        safeEvent(Evts.SHIPMENT_CANCELLED, {
+          orderId: order.id,
+          userId: order.userId,
+        });
       } else if (latest.includes("rto") || latest.includes("return")) {
-        safeEvent(Evts.SHIPMENT_RTO, { orderId: order.id });
+        safeEvent(Evts.SHIPMENT_RTO, {
+          orderId: order.id,
+          userId: order.userId,
+        });
       }
       order.fulfillment.lastSyncAt = new Date();
       order.fulfillment.trackingUrl = trackingUrlFor(awb);
       await order.save();
-      safeEvent(Evts.SHIPMENT_TRACK_SYNCED, { orderId: order.id, awb });
+      safeEvent(Evts.SHIPMENT_TRACK_SYNCED, {
+        orderId: order.id,
+        userId: order.userId,
+        awb,
+      });
       return res.status(200).json({
         trackingAvailable: true,
         awb,
@@ -468,6 +494,7 @@ router.post(
       await order.save();
       safeEvent(Evts.SHIPMENT_PICKUP, {
         orderId: order.id,
+        userId: order.userId,
         awb: data.awb_number,
       });
     }
@@ -504,7 +531,10 @@ router.post(
         source: "admin",
       });
       await order.save();
-      safeEvent(Evts.SHIPMENT_CANCELLED, { orderId: order.id });
+      safeEvent(Evts.SHIPMENT_CANCELLED, {
+        orderId: order.id,
+        userId: order.userId,
+      });
     }
     return res.status(200).json(resp);
   },
@@ -570,6 +600,8 @@ router.post(
         safeEvent(Evts.SHIPMENT_TRACK_SYNCED, {
           source: "ndr",
           awb: req.params.awb,
+          orderId: order?.id ?? null,
+          userId: order?.userId ?? null,
           action: req.body?.action,
         });
       }

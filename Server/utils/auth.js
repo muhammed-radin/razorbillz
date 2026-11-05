@@ -21,8 +21,33 @@ import {
 import { ac, ecommerceRoles } from "./permissions.js";
 import sendEmail from "./mailer.js";
 import storeConfig from "../shared/store.config.js";
+import { stripServerOwnedFields } from "./schemaMapper.js";
+import { db } from "./db.js";
 
 let authInstance = null;
+
+/* Session records do not always embed the user, so resolve the guest
+ * flag once per session lifecycle event. Guests must never be counted
+ * as logged-in users or get a lastLogin timestamp. */
+async function resolveSessionGuest(sessionData) {
+  if (sessionData?.user?.isAnonymous || sessionData?.isAnonymous) return true;
+
+  const userId = sessionData?.userId || sessionData?.user?.id;
+  if (!userId) return false;
+
+  try {
+    // Better Auth stores the authoritative user record (including
+    // isAnonymous) in its own validation collection. Guest users are
+    // intentionally absent from the app "users" collection, so querying
+    // UserModel alone always reports them as logged-in.
+    const record = await db.db
+      .collection("users_validation")
+      .findOne({ $or: [{ _id: userId }, { id: userId }] });
+    return Boolean(record?.isAnonymous);
+  } catch {
+    return false;
+  }
+}
 
 export default function createAuth(db) {
   if (authInstance) {
@@ -126,7 +151,13 @@ export default function createAuth(db) {
         },
         update: {
           after: async (userData, context) => {
-            await UserModel.updateOne({ id: userData.id }, { $set: userData });
+            const safeFields = stripServerOwnedFields(userData);
+            if (Object.keys(safeFields).length > 0) {
+              await UserModel.updateOne(
+                { id: userData.id },
+                { $set: safeFields },
+              );
+            }
             evt.fire(
               Evts.USER_PROFILE_UPDATED,
               new UserEvent({
@@ -142,11 +173,13 @@ export default function createAuth(db) {
       session: {
         create: {
           after: async (sessionData, context) => {
+            const isGuest = await resolveSessionGuest(sessionData);
             evt.fire(
               Evts.USER_LOGGED_IN,
               new SessionEvent({
                 type: Evts.USER_LOGGED_IN,
                 session: sessionData,
+                isGuest,
               }),
             );
             evt.fire(
@@ -154,6 +187,7 @@ export default function createAuth(db) {
               new SessionEvent({
                 type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest,
               }),
             );
           },
@@ -171,11 +205,15 @@ export default function createAuth(db) {
         },
         update: {
           after: async (sessionData, context) => {
+            // Session updates are refreshes/expiry bumps, not fresh
+            // logins: only record a site view so login analytics and
+            // lastLogin stay accurate.
             evt.fire(
-              Evts.USER_LOGGED_IN,
+              Evts.SITE_VIEWED,
               new SessionEvent({
-                type: Evts.USER_LOGGED_IN,
+                type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest: await resolveSessionGuest(sessionData),
               }),
             );
           },

@@ -135,6 +135,7 @@ router.post(
     });
     safeEvent(Evts.TICKET_CREATED, {
       ticketId: ticket.id,
+      userId: ticket.userId,
       category,
       orderId: ticket.orderId,
     });
@@ -205,6 +206,8 @@ router.post(
     await ticket.save();
     safeEvent(reopened ? Evts.TICKET_REOPENED : Evts.TICKET_REPLIED, {
       ticketId: ticket.id,
+      userId: ticket.userId,
+      orderId: ticket.orderId,
       sender,
     });
     return res.json({
@@ -284,7 +287,7 @@ router.patch(
         : next === TicketStatus.CLOSED
           ? Evts.TICKET_CLOSED
           : Evts.TICKET_REPLIED,
-      { ticketId: ticket.id, status: next },
+      { ticketId: ticket.id, userId: ticket.userId, status: next },
     );
     return res.json({ success: true, ticket });
   }),
