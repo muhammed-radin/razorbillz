@@ -74,6 +74,12 @@ export class Memory {
       delete this.locals[url];
     }
   }
+  clearByPrefix(prefix) {
+    const p = String(prefix ?? "").toLowerCase();
+    for (const key of Object.keys(this.locals)) {
+      if (key.startsWith(p)) delete this.locals[key];
+    }
+  }
 }
 
 // backward-compatible factory

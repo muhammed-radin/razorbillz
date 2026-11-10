@@ -1,6 +1,6 @@
 "use client";
 
-import { useDeferredValue, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Trash2,
@@ -12,6 +12,7 @@ import {
   CreditCard,
   Store,
   MoveRight,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -32,13 +33,15 @@ import { currency } from "@/utils/currency";
 export function ShoppingCart1() {
   const navigate = useNavigate();
   const storeItems = useCartStore((s) => s.items);
-  const deferredStoreItems = useDeferredValue(storeItems);
   const setQuantity = useCartStore((s) => s.setQuantity);
+  const flushQuantitySync = useCartStore((s) => s.flushQuantitySync);
   const removeFromCart = useCartStore((s) => s.remove);
+  const syncing = useCartStore((s) => s.syncing);
   const [isRemoving, setIsRemoving] = useState(null);
+  const [goingToCheckout, setGoingToCheckout] = useState(false);
 
   // Normalize server items to the card's display shape
-  const items = deferredStoreItems.map((item) => ({
+  const items = storeItems.map((item) => ({
     id: item.productId,
     name: item.title ?? item.name,
     price: item.price,
@@ -55,10 +58,30 @@ export function ShoppingCart1() {
   }));
 
   const updateQuantity = (id, increment) => {
-    const current = items.find((item) => item.id === id);
-    if (!current) return;
-    const next = Math.max(1, current.quantity + (increment ? 1 : -1));
+    /* Read the LIVE store value (not a deferred render) so rapid clicks
+     * never compute the next quantity from a stale number. */
+    const live = useCartStore
+      .getState()
+      .items.find((item) => item.productId === id);
+    const currentQty = live?.quantity ?? 1;
+    const next = Math.max(1, currentQty + (increment ? 1 : -1));
+    if (next === currentQty) return;
     setQuantity(id, next).catch(() => toast.error("Failed to update quantity"));
+  };
+
+  const handleCheckout = async () => {
+    if (goingToCheckout) return;
+    setGoingToCheckout(true);
+    try {
+      // Flush pending quantity edits first so the checkout summary can
+      // never read a stale quantity from the server.
+      await flushQuantitySync();
+      navigate("/checkout");
+    } catch {
+      // The store already rolled back and surfaced the error; let the
+      // user retry instead of navigating with an unsynced cart.
+      setGoingToCheckout(false);
+    }
   };
 
   const removeItem = (id) => {
@@ -86,7 +109,7 @@ export function ShoppingCart1() {
         <p className="text-muted-foreground">
           {items.length} {items.length === 1 ? "item" : "items"} in your cart •{" "}
           <span className="text-foreground font-semibold">
-            ${subtotal.toFixed(2)}
+            {currency(subtotal.toFixed(2))}
           </span>
         </p>
       </div>
@@ -164,8 +187,14 @@ export function ShoppingCart1() {
                         >
                           <Minus />
                         </Button>
-                        <span className="w-8 text-center text-sm font-medium">
+                        <span className="flex min-w-8 items-center justify-center gap-1 text-center text-sm font-medium">
                           {item.quantity}
+                          {syncing[item.id] && (
+                            <Loader2
+                              className="size-3.5 animate-spin text-muted-foreground"
+                              aria-label="Saving quantity"
+                            />
+                          )}
                         </span>
                         <Button
                           variant="outline"
@@ -218,7 +247,7 @@ export function ShoppingCart1() {
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Shipping</span>
                   <span className={shipping === 0 ? "text-success" : ""}>
-                    {shipping === 0 ? "Free" : `$${shipping.toFixed(2)}`}
+                    {shipping === 0 ? "Free" : currency(shipping.toFixed(2))}
                   </span>
                 </div>
                 {savings > 0 && (
@@ -250,11 +279,15 @@ export function ShoppingCart1() {
               <Button
                 size="lg"
                 className="h-10 px-8 mt-4 w-full cursor-pointer text-base font-medium"
-                disabled={items.length === 0}
-                onClick={() => navigate("/shipping-info")}
+                disabled={items.length === 0 || goingToCheckout}
+                onClick={handleCheckout}
               >
-                <ShoppingBag data-icon="inline-start" />
-                Proceed to Checkout
+                {goingToCheckout ? (
+                  <Loader2 className="animate-spin" data-icon="inline-start" />
+                ) : (
+                  <ShoppingBag data-icon="inline-start" />
+                )}
+                {goingToCheckout ? "Syncing cart…" : "Proceed to Checkout"}
               </Button>
 
               <div className="text-muted-foreground flex items-center justify-center gap-2 text-xs">

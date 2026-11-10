@@ -15,7 +15,6 @@ router.get("/", requireAuth, passUserAuth, async (req, res) => {
     }
 
     const user = await db.collection("users").findOne({ id: userId });
-    console.log("Fetched user settings:", user); // Log the fetched user data
     if (!user) {
       return res.status(404).json({ error: "User not found! - 404" });
     }

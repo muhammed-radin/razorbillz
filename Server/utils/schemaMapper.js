@@ -25,12 +25,25 @@ const SECRET_FIELDS = new Set([
   "providerId",
 ]);
 
-const SERVER_OWNED_FIELDS = new Set([
+export const SERVER_OWNED_FIELDS = new Set([
   "isActive",
-  "adminPermissions",
+  "lastLogin",
+  "currentlyLoggedIn",
+  "totalOrders",
   "totalSpent",
   "AOV",
 ]);
+
+/* Remove fields that only the server may own before persisting a
+ * client-originated user update. Prevents profile edits from rolling
+ * back counters maintained by the buffered stats workers. */
+export function stripServerOwnedFields(data = {}) {
+  const out = {};
+  for (const [key, value] of Object.entries(data)) {
+    if (!SERVER_OWNED_FIELDS.has(key)) out[key] = value;
+  }
+  return out;
+}
 
 function mapMongooseType(schemaType) {
   if (!schemaType) return null;

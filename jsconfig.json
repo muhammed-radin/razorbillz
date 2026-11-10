@@ -2,8 +2,22 @@
   "compilerOptions": {
     "rootDir": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@shared/*": ["./Server/shared/*"]
     }
   },
-  "exclude": ["Server/**/*"]
+  "exclude": [
+    "Server/**",
+    "node_modules/**",
+    "dist/**",
+    "build/**",
+    "out/**",
+    ".next/**",
+    "coverage/**",
+    ".cache/**",
+    ".turbo/**",
+    "public/**",
+    "scripts/**",
+    "tests/**"
+  ]
 }

@@ -107,11 +107,14 @@ export default function FeaturedProducts({ products, loading }) {
                 <Flame className="size-3.5" /> {t("homepage.featured.hot")}
               </span>
               <Tabs value={tab} onValueChange={setTab}>
+                {/* Filter-only control: there is no tab panel, so drop the
+                 * dangling `aria-controls` Radix would otherwise emit. */}
                 <TabsList className="h-auto rounded-2xl p-1">
                   {tabs.map((tb) => (
                     <TabsTrigger
                       key={tb}
                       value={tb}
+                      aria-controls={undefined}
                       className="rounded-xl px-4 py-2 text-xs sm:text-sm capitalize"
                     >
                       {tb === "all" ? t("common.all") : tb}

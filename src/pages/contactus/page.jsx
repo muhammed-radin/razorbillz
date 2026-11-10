@@ -16,32 +16,34 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
-import { Helmet } from "react-helmet-async";
+import { StoreMeta } from "@/components/store-meta";
+import { useStoreInfo } from "@/utils/store";
 
 export default function ContactUs() {
   const { t } = useTranslation();
+  const store = useStoreInfo();
 
   const contactMethods = [
     {
       icon: Mail,
       title: t("contact.emailSupport"),
-      detail: "support@razorbills.com",
+      detail: store.emailSupport,
       description: t("contact.emailSupportDesc"),
     },
     {
       icon: Phone,
       title: t("contact.phoneSupport"),
-      detail: "+91 XXXXXXXXXX",
+      detail: store.phoneSupport,
       description: t("contact.phoneSupportDesc"),
       time: t("contact.phoneSupportHours"),
     },
     {
       icon: MapPin,
       title: t("contact.officeAddress"),
-      detail: "Razorbills",
-      description: "[Your Office Address]",
-      address: "[City, State, PIN Code]",
-      country: "India",
+      detail: store.name,
+      description: store.address.line2 || "",
+      address: store.address.cityStatePin,
+      country: store.address.country,
     },
   ];
 
@@ -54,11 +56,11 @@ export default function ContactUs() {
 
   return (
     <div className="min-h-screen bg-white text-neutral-900 dark:bg-black/10 dark:text-gray-100">
-      <Helmet>
-        <title>{t("contact.helmetTitle")}</title>
-        <meta name="description" content="Get in touch with RazorBills for support, inquiries, and feedback. We're here to help with product questions, orders, and general inquiries." />
-        <meta name="keywords" content="contact us, razorbills, support, email, phone, address, contact form" />
-      </Helmet>
+      <StoreMeta
+        title={t("contact.title")}
+        description={t("contact.subtitle")}
+        keywords={`contact us, ${store.name}, support, email, phone, address, contact form`}
+      />
       {/* Hero Section */}
       <div className="relative overflow-hidden border-b dark:border-neutral-700">
         <div className="absolute inset-0"></div>

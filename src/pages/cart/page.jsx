@@ -1,4 +1,5 @@
-import React, { useEffect } from "react";
+import React from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 
@@ -27,7 +28,7 @@ const CartPage = () => {
   const fetchCart = useCartStore((s) => s.fetch);
   const clearCart = useCartStore((s) => s.clear);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchCart().catch(() => {});
   }, []);
 

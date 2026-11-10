@@ -9,6 +9,7 @@ import {
   BreadcrumbPage,
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb";
+import { currency } from "@/utils/currency";
 
 export function WishlistHeader({ itemCount = 0, stats = {} }) {
   const { priceDropCount = 0, backInStockCount = 0, almostGoneCount = 0, totalSavings = 0 } = stats;
@@ -80,7 +81,7 @@ export function WishlistHeader({ itemCount = 0, stats = {} }) {
           )}
           {totalSavings > 0 && (
             <span className="text-emerald-600 dark:text-emerald-400 font-medium">
-              Total savings ${totalSavings}
+              Total savings {currency(totalSavings)}
             </span>
           )}
         </div>

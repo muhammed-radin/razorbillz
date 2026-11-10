@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { cn } from "@/lib/utils";
+import { currency } from "@/utils/currency";
 
 export function WishlistProductRow({
   item,
@@ -113,11 +114,11 @@ export function WishlistProductRow({
         <div className="flex items-baseline gap-1.5">
           {item.originalPrice && (
             <span className="text-xs text-neutral-400 dark:text-neutral-500 line-through font-normal">
-              ${item.originalPrice}
+              {currency(item.originalPrice)}
             </span>
           )}
           <span className="text-base sm:text-lg font-bold text-neutral-900 dark:text-white tracking-tight">
-            ${item.price}
+            {currency(item.price)}
           </span>
         </div>
 

@@ -3,9 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 import { Preloader } from "../LoaderScreen";
-import { ImageOff, Heart, Eye, ShoppingCart } from "lucide-react";
+import { ImageOff, Heart, Eye, ShoppingCart, Loader2 } from "lucide-react";
 import { currency } from "@/utils/currency";
 import { useTranslation } from "react-i18next";
+import { useCartStore, useWishlistStore } from "@/stores/shop";
+import { toast } from "sonner";
 
 const ProductCard = ({ product, index }) => {
   const { t } = useTranslation();
@@ -13,8 +15,14 @@ const ProductCard = ({ product, index }) => {
   const [imageLoaded, setLoadedState] = useState(false);
   const [imageErr, setImageErr] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
-  const [isFavorite, setIsFavorite] = useState(false);
   const [isVisible, setIsVisible] = useState(false);
+  const [pendingWish, setPendingWish] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState(false);
+  const addToCart = useCartStore((s) => s.add);
+  const wishlistHas = useWishlistStore((s) => s.has);
+  const wishlistToggle = useWishlistStore((s) => s.toggle);
+  const pid = product.productId ?? product.id;
+  const isFavorite = wishlistHas(pid);
 
   // Staggered animation on mount
   useEffect(() => {
@@ -37,26 +45,42 @@ const ProductCard = ({ product, index }) => {
     setImageErr(true);
   }, []);
 
-  const handleFavoriteClick = useCallback((e) => {
-    e.stopPropagation();
-    setIsFavorite((prev) => !prev);
-  }, []);
-
-  const handleQuickView = useCallback(
-    (e) => {
-      e?.stopPropagation();
-      // Quick view functionality can be implemented here
+  const handleFavoriteClick = useCallback(
+    async (e) => {
+      e.stopPropagation();
+      if (pendingWish) return;
+      setPendingWish(true);
+      try {
+        await wishlistToggle(product);
+        toast.success(
+          wishlistHas(pid)
+            ? t("product.addToFavorites")
+            : t("product.removeFromFavorites"),
+        );
+      } catch {
+        toast.error(t("common.tryAgain"));
+      } finally {
+        setPendingWish(false);
+      }
     },
-    [product.id],
+    [pendingWish, wishlistToggle, wishlistHas, pid, product, t],
   );
 
   const handleAddToCart = useCallback(
-    (e) => {
+    async (e) => {
       e?.stopPropagation();
-      // Add to cart functionality can be implemented here
-      console.log("Add to cart:", product.id);
+      if (pendingAdd || product.stock === 0) return;
+      setPendingAdd(true);
+      try {
+        await addToCart(product, 1);
+        toast.success(t("product.addedToCart"));
+      } catch {
+        toast.error(t("common.tryAgain"));
+      } finally {
+        setPendingAdd(false);
+      }
     },
-    [product.id],
+    [pendingAdd, addToCart, product, t],
   );
 
   // Calculate discount percentage
@@ -147,22 +171,28 @@ const ProductCard = ({ product, index }) => {
         {/* Favorite Button */}
         <button
           onClick={handleFavoriteClick}
+          disabled={pendingWish}
           aria-label={isFavorite ? t("product.removeFromFavorites") : t("product.addToFavorites")}
           className={cn(
             "absolute top-2 right-2 z-10 p-2 rounded-full",
             "backdrop-blur-md bg-white/30 dark:bg-black/30",
             "transition-all duration-200 hover:scale-110",
             "shadow-lg border border-white/20",
+            "disabled:cursor-wait disabled:opacity-80 disabled:hover:scale-100",
           )}
         >
-          <Heart
-            className={cn(
-              "w-4 h-4 transition-all duration-200",
-              isFavorite
-                ? "fill-red-500 text-red-500 scale-110"
-                : "text-white dark:text-gray-200",
-            )}
-          />
+          {pendingWish ? (
+            <Loader2 className="w-4 h-4 animate-spin text-white" />
+          ) : (
+            <Heart
+              className={cn(
+                "w-4 h-4 transition-all duration-200",
+                isFavorite
+                  ? "fill-red-500 text-red-500 scale-110"
+                  : "text-white dark:text-gray-200",
+              )}
+            />
+          )}
         </button>
 
         {/* Quick Action Buttons */}
@@ -182,10 +212,15 @@ const ProductCard = ({ product, index }) => {
           </button>
           <button
             onClick={handleAddToCart}
+            disabled={pendingAdd || product.stock === 0}
             aria-label={t("product.addToCart")}
-            className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-lg hover:scale-110 transition-transform duration-200"
+            className="p-2 rounded-full bg-white dark:bg-gray-800 shadow-lg hover:scale-110 transition-transform duration-200 disabled:cursor-wait disabled:opacity-70 disabled:hover:scale-100"
           >
-            <ShoppingCart className="w-4 h-4 text-gray-700 dark:text-gray-200" />
+            {pendingAdd ? (
+              <Loader2 className="w-4 h-4 animate-spin text-gray-700 dark:text-gray-200" />
+            ) : (
+              <ShoppingCart className="w-4 h-4 text-gray-700 dark:text-gray-200" />
+            )}
           </button>
         </div>
 

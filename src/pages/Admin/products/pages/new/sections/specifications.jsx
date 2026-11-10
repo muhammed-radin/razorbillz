@@ -8,15 +8,19 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Plus, Trash2 } from "lucide-react"
+import ArrayImportDialog from "@/pages/Admin/products/components/array-import-dialog"
 
-export default function SpecificationsSection({ specifications, updateSpecification, removeSpecification, addSpecification }) {
+export default function SpecificationsSection({ specifications, updateSpecification, removeSpecification, addSpecification, onImport }) {
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Specifications</CardTitle>
-                <CardDescription>
-                    Add technical specifications
-                </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                <div className="space-y-1.5">
+                    <CardTitle>Specifications</CardTitle>
+                    <CardDescription>
+                        Add technical specifications
+                    </CardDescription>
+                </div>
+                {onImport && <ArrayImportDialog kind="specifications" onImport={onImport} />}
             </CardHeader>
             <CardContent className="space-y-4">
                 {specifications.map((spec, index) => (

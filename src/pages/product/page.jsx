@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback, useEffect } from "react";
+import React, { useState, useMemo, useCallback, lazy, Suspense } from "react";
 import { Helmet } from "react-helmet-async";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ import {
   Share2,
   Minus,
   Plus,
+  PackageSearch,
+  Play,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { currency } from "@/utils/currency";
@@ -42,6 +44,13 @@ import {
 } from "@/components/ui/drawer";
 
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Empty,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+  EmptyDescription,
+} from "@/components/ui/empty";
 
 import HorizontalProductCard from "@/components/horizontal-card/horizontal-card";
 import { LoaderScreen } from "@/components/LoaderScreen";
@@ -52,94 +61,146 @@ import { useCartStore, useWishlistStore } from "@/stores/shop";
 import { interactionsApi, productsApi } from "@/services/shop";
 import { useUserSession } from "@/contexts/user-session-context";
 import { ReviewRatingSection } from "@/components/review/review-rating";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
+import { useApiCacheStore } from "@/stores/apiCacheStore";
+
+/* Videos are optional, so the player (Vidstack runtime + CSS) is only fetched
+ * on product pages that actually contain one. */
+const ProductVideoPlayer = lazy(
+  () => import("@/components/product-video-player"),
+);
 
 const ProductDetailsPage = () => {
   const { t } = useTranslation();
   const { id } = useParams();
   const { data } = useUserSession();
   const user = data?.user;
-  const [selectedImage, setSelectedImage] = useState(0);
+  const [selectedMedia, setSelectedMedia] = useState(0);
   const [quantity, setQuantity] = useState(1);
-  const [product, setProduct] = useState({ loading: true });
-  const [similar, setSimilar] = useState([]);
-  const [rating, setRating] = useState(0);
+  const [product, setProduct] = useState(() => {
+    const cached = useApiCacheStore.getState().getCache(`product:${id}`);
+    return cached?.isValid && cached.data ? cached.data : { loading: true };
+  });
+  const [similar, setSimilar] = useState(() => {
+    const cached = useApiCacheStore.getState().getCache(`products:similar:${id}`);
+    return cached?.isValid && Array.isArray(cached.data) ? cached.data : [];
+  });
+  const [_rating, setRating] = useState(0);
   // Current user's interaction for this product (GET /api/interactions/p/:productId).
   // Null = unknown (logged out / request failed) -> fall back to local stores.
-  const [interaction, setInteraction] = useState(null);
+  const [interaction, setInteraction] = useState(() => {
+    const cached = useApiCacheStore.getState().getCache(`interaction:${id}`);
+    return cached?.isValid && cached.data ? cached.data : null;
+  });
   const navigate = useNavigate();
   const addToCart = useCartStore((s) => s.add);
   const toggleWishlist = useWishlistStore((s) => s.toggle);
-  const wishlistHas = useWishlistStore((s) => s.has);
 
-  const hasWishlisted = interaction
-    ? Boolean(interaction.hasWishlisted)
-    : product?.id
-      ? wishlistHas(product.id)
-      : false;
+  const targetProductId = String(product?.productId ?? product?.id ?? id);
+
+  // Reactive Zustand selector: component automatically re-renders when items array updates
+  const isWishedInStore = useWishlistStore((s) =>
+    s.items?.some((p) => String(p.productId ?? p.id) === targetProductId)
+  );
+
+  // Product is wishlisted if present in wishlist store OR recorded on interaction doc
+  const hasWishlisted = Boolean(isWishedInStore || interaction?.hasWishlisted);
   const hasShared = Boolean(interaction?.hasShared);
 
-  useEffect(() => {
-    // Fetch products from the API
-    api.client
-      .get(api.products(id))
-      .then((response) => {
-        setProduct(response.data.products || response.data || null);
+  useStrictEffect(() => {
+    if (!id) return;
+    setSelectedMedia(0);
+    setQuantity(1);
+
+    // Hydrate wishlist items if empty
+    if (useWishlistStore.getState().items.length === 0) {
+      useWishlistStore.getState().fetch().catch(() => {});
+    }
+
+    // If not cached, initiate loading state
+    const cachedProduct = useApiCacheStore.getState().getCache(`product:${id}`);
+    if (!cachedProduct?.isValid || !cachedProduct.data) {
+      setProduct({ loading: true });
+    }
+
+    // 1. Fetch product with caching & in-flight deduplication
+    useApiCacheStore
+      .getState()
+      .fetchWithCache(
+        `product:${id}`,
+        async () => {
+          const response = await api.client.get(api.products(id));
+          return response.data.products || response.data || null;
+        },
+        { ttl: 5 * 60 * 1000 }
+      )
+      .then((data) => {
+        setProduct(data);
       })
       .catch((error) => {
-        if (error.response && error.response.status === 404) {
+        if (error?.response?.status === 404) {
           navigate("/404");
         }
         console.error("Error fetching products:", error);
       });
-  }, [id, navigate]);
 
-  const loadInteraction = useCallback(async (productId) => {
-    if (!productId) return;
-    try {
-      const data = await interactionsApi.mine(productId);
-      const doc = data || {};
-      console.log("Fetched interaction:", doc);
-      setInteraction({
-        hasViewed: Boolean(doc.hasViewed),
-        hasShared: Boolean(doc.hasShared),
-        hasWishlisted: Boolean(doc.hasWishlisted),
-        rating: doc.rating ?? 0,
-      });
-      if (typeof doc.rating === "number" && doc.rating > 0) {
-        setRating(doc.rating);
-      }
-    } catch (error) {
-      // 404 = never interacted -> clean defaults; 401/403 = logged out -> null
-      if (error?.response?.status === 404) {
-        setInteraction({
-          hasViewed: false,
-          hasShared: false,
-          hasWishlisted: false,
-          rating: 0,
-        });
-      } else {
-        setInteraction(null);
-      }
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!id) return;
-    // Record a product view (guest sessions allowed), then load this
-    // user's interaction so wishlist/rating/share reflect the server.
+    // 2. Record visit (throttled) and load user interaction
     interactionsApi
       .visit(id)
       .catch(() => {})
-      .finally(() => loadInteraction(id));
-    // Load similar products
-    productsApi
-      .similar(id, { limit: 8 })
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data.products ?? []);
+      .finally(() => {
+        useApiCacheStore
+          .getState()
+          .fetchWithCache(
+            `interaction:${id}`,
+            async () => {
+              const data = await interactionsApi.mine(id);
+              return data || {};
+            },
+            { ttl: 60 * 1000 }
+          )
+          .then((doc) => {
+            const nextInteraction = {
+              hasViewed: Boolean(doc.hasViewed),
+              hasShared: Boolean(doc.hasShared),
+              hasWishlisted: Boolean(doc.hasWishlisted),
+              rating: doc.rating ?? 0,
+            };
+            setInteraction(nextInteraction);
+            if (typeof doc.rating === "number" && doc.rating > 0) {
+              setRating(doc.rating);
+            }
+          })
+          .catch((error) => {
+            if (error?.response?.status === 404) {
+              setInteraction({
+                hasViewed: false,
+                hasShared: false,
+                hasWishlisted: false,
+                rating: 0,
+              });
+            } else {
+              setInteraction(null);
+            }
+          });
+      });
+
+    // 3. Fetch similar products (cached & deduplicated)
+    useApiCacheStore
+      .getState()
+      .fetchWithCache(
+        `products:similar:${id}`,
+        async () => {
+          const data = await productsApi.similar(id, { limit: 8 });
+          return Array.isArray(data) ? data : (data.products ?? []);
+        },
+        { ttl: 10 * 60 * 1000 }
+      )
+      .then((list) => {
         setSimilar(list);
       })
       .catch(() => {});
-  }, [id, loadInteraction]);
+  }, [id, navigate]);
 
   const handleAddToCart = async () => {
     try {
@@ -153,18 +214,24 @@ const ProductDetailsPage = () => {
   };
 
   const handleToggleWishlist = async () => {
+    const nextWish = !hasWishlisted;
     try {
       await toggleWishlist(product);
-      // Optimistic update — the server flag lags behind the event buffer flush
-      setInteraction((prev) =>
-        prev ? { ...prev, hasWishlisted: !prev.hasWishlisted } : prev,
-      );
+      // Optimistic update — keep interaction state and Zustand cache in sync
+      setInteraction((prev) => {
+        const next = {
+          ...(prev || {}),
+          hasWishlisted: nextWish,
+        };
+        useApiCacheStore.getState().setCache(`interaction:${id}`, next);
+        return next;
+      });
       toast.success(
-        hasWishlisted
-          ? t("product.removedFromWishlist", {
+        nextWish
+          ? t("product.addedToWishlist", { defaultValue: "Saved to wishlist" })
+          : t("product.removedFromWishlist", {
               defaultValue: "Removed from wishlist",
-            })
-          : t("product.addedToWishlist", { defaultValue: "Saved to wishlist" }),
+            }),
       );
     } catch {
       toast.error(
@@ -176,7 +243,11 @@ const ProductDetailsPage = () => {
   const handleShare = async () => {
     try {
       await interactionsApi.share(id);
-      setInteraction((prev) => (prev ? { ...prev, hasShared: true } : prev));
+      setInteraction((prev) => {
+        const next = prev ? { ...prev, hasShared: true } : prev;
+        if (next) useApiCacheStore.getState().setCache(`interaction:${id}`, next);
+        return next;
+      });
     } catch {
       // sharing is still useful offline — ignore API errors
     }
@@ -189,11 +260,15 @@ const ProductDetailsPage = () => {
     }
   };
 
-  const handleRate = async (stars) => {
+  const _handleRate = async (stars) => {
     setRating(stars);
     try {
       await interactionsApi.rate(id, stars);
-      setInteraction((prev) => (prev ? { ...prev, rating: stars } : prev));
+      setInteraction((prev) => {
+        const next = prev ? { ...prev, rating: stars } : prev;
+        if (next) useApiCacheStore.getState().setCache(`interaction:${id}`, next);
+        return next;
+      });
       toast.success(
         t("product.ratingSaved", { defaultValue: "Thanks for rating!" }),
       );
@@ -234,10 +309,35 @@ const ProductDetailsPage = () => {
     return null;
   }
 
+  const galleryImages = product.images?.length
+    ? product.images
+    : product.thumbnail
+      ? [product.thumbnail]
+      : [];
+
+  const galleryMedia = [
+    ...galleryImages.map((src, index) => ({
+      key: `image-${index}`,
+      type: "image",
+      src,
+      poster: "",
+      alt: `${product.title} ${index + 1}`,
+    })),
+    ...(product.videos || []).map((video, index) => ({
+      key: `video-${index}`,
+      type: "video",
+      src: video.url,
+      poster: video.poster || "",
+      alt: `${product.title} ${index + 1}`,
+    })),
+  ];
+
+  const activeMedia = galleryMedia[selectedMedia] || galleryMedia[0];
+
   return (
     <div className="min-h-screen max-w-7xl flex flex-col p-4 lg:p-8 mx-auto">
       <Helmet>
-        <title>{`${product.title} - RazorBills`}</title>
+        <title>{`${product.title} - ${t("store.name")}`}</title>
         <meta name="description" content={product.description} />
         <meta
           name="keywords"
@@ -268,37 +368,80 @@ const ProductDetailsPage = () => {
       <div className="max-w-7xl justify-items-center lg:justify-items-normal grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12 w-full">
         {/* Product Images */}
         <div className="space-y-4 w-full max-w-lg">
-          {/* Main Image */}
-          <div className="aspect-square rounded-xl overflow-hidden bg-gray-50 border">
-            <img
-              src={
-                (product.images && product.images[selectedImage]) ||
-                product.thumbnail
-              }
-              alt={product.title}
-              className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
-            />
+          {/* Main media: image or video */}
+          <div className="relative aspect-square rounded-xl overflow-hidden bg-gray-50 border">
+            {activeMedia?.type === "video" ? (
+              <Suspense
+                fallback={
+                  <div className="grid h-full w-full place-items-center text-sm text-muted-foreground">
+                    {t("common.loading")}
+                  </div>
+                }
+              >
+                <ProductVideoPlayer
+                  src={activeMedia.src}
+                  poster={activeMedia.poster}
+                  title={`${product.title} — ${t("product.video")}`}
+                />
+              </Suspense>
+            ) : (
+              <img
+                src={activeMedia?.src || product.thumbnail}
+                alt={product.title}
+                className="w-full h-full object-cover hover:scale-105 transition-transform duration-300"
+              />
+            )}
           </div>
 
-          {/* Thumbnail Images */}
-          {product.images && product.images.length > 1 && (
+          {/* Media thumbnails (images + videos) */}
+          {galleryMedia.length > 1 && (
             <div className="flex space-x-3 overflow-x-auto pb-2">
-              {product.images.map((image, index) => (
+              {galleryMedia.map((media, index) => (
                 <button
-                  key={index}
-                  onClick={() => setSelectedImage(index)}
+                  key={media.key}
+                  type="button"
+                  onClick={() => setSelectedMedia(index)}
+                  aria-pressed={selectedMedia === index}
+                  aria-label={
+                    media.type === "video"
+                      ? `${t("product.playVideo")}: ${media.alt}`
+                      : media.alt
+                  }
                   className={cn(
-                    "w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors flex-shrink-0",
-                    selectedImage === index
+                    "relative w-20 h-20 rounded-lg overflow-hidden border-2 transition-colors flex-shrink-0",
+                    selectedMedia === index
                       ? "border-primary"
                       : "border-gray-200",
                   )}
                 >
-                  <img
-                    src={image}
-                    alt={`${product.title} ${index + 1}`}
-                    className="w-full h-full object-cover"
-                  />
+                  {media.type === "video" ? (
+                    <>
+                      {media.poster ? (
+                        <img
+                          src={media.poster}
+                          alt=""
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <video
+                          src={`${media.src}#t=0.1`}
+                          muted
+                          playsInline
+                          preload="metadata"
+                          className="w-full h-full object-cover"
+                        />
+                      )}
+                      <span className="absolute inset-0 grid place-items-center bg-black/35">
+                        <Play className="h-5 w-5 fill-white text-white" />
+                      </span>
+                    </>
+                  ) : (
+                    <img
+                      src={media.src}
+                      alt={media.alt}
+                      className="w-full h-full object-cover"
+                    />
+                  )}
                 </button>
               ))}
             </div>
@@ -531,17 +674,66 @@ const ProductDetailsPage = () => {
           </Card>
         </section>
 
-        {/* Reviews Section */}
+        {/* Tabs: Similar Products (default) and Customer Reviews */}
         <div className="max-w-7xl mt-12 space-y-8">
-          <Tabs defaultValue="review">
+          <Tabs defaultValue="similar">
             <TabsList>
-              <TabsTrigger value="review">
-                {t("product.reviewsTab")}
-              </TabsTrigger>
               <TabsTrigger value="similar">
-                {t("product.brandProductsTab", { brand: product.brand || "" })}
+                {t("product.brandProductsTab", {
+                  brand: product.brand || "",
+                  defaultValue: `Products From ${product.brand || ""}`,
+                })}
+              </TabsTrigger>
+              <TabsTrigger value="review">
+                {t("product.reviewsTab", { defaultValue: "Reviews" })}
               </TabsTrigger>
             </TabsList>
+
+            <TabsContent value="similar" className="w-full">
+              <Card className="bg-background">
+                <CardHeader>
+                  <CardTitle>
+                    {t("product.brandProductsTab", {
+                      brand: product.brand || "",
+                      defaultValue: `Products From ${product.brand || ""}`,
+                    })}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="w-full">
+                  {similar && similar.length > 0 ? (
+                    <div className="flex flex-wrap gap-4 flex-row items-stretch justify-center">
+                      {similar.map((item, index) => (
+                        <HorizontalProductCard
+                          key={item.id ?? item.productId ?? index}
+                          product={item}
+                          index={index}
+                        />
+                      ))}
+                    </div>
+                  ) : (
+                    <Empty className="border border-dashed rounded-2xl py-12">
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <PackageSearch className="size-6 text-muted-foreground" />
+                        </EmptyMedia>
+                        <EmptyTitle>
+                          {t("product.noSimilarTitle", {
+                            defaultValue: "No Similar Products Found",
+                          })}
+                        </EmptyTitle>
+                        <EmptyDescription>
+                          {t("product.noSimilarDesc", {
+                            defaultValue: `We couldn't find any other products from ${product.brand || "this brand"} at the moment.`,
+                            brand: product.brand || "",
+                          })}
+                        </EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  )}
+                </CardContent>
+              </Card>
+            </TabsContent>
+
             <TabsContent value="review" className="w-full">
               <Card className="bg-background">
                 <CardHeader>
@@ -553,29 +745,6 @@ const ProductDetailsPage = () => {
                 </CardHeader>
                 <CardContent className="w-full">
                   <ReviewRatingSection productId={id} userId={user?.id} />
-                </CardContent>
-              </Card>
-            </TabsContent>
-            <TabsContent value="similar">
-              <Card className="bg-background">
-                <CardHeader>
-                  <CardTitle>
-                    {t("product.brandProductsTab", {
-                      brand: product.brand || "",
-                    })}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="w-full">
-                  <div className="flex flex-wrap gap-4 flex-row items-stretch justify-center">
-                    {similar.length > 0 &&
-                      similar.map((item, index) => (
-                        <HorizontalProductCard
-                          key={item.id ?? item.productId ?? index}
-                          product={item}
-                          index={index}
-                        />
-                      ))}
-                  </div>
                 </CardContent>
               </Card>
             </TabsContent>

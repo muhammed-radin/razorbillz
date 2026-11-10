@@ -2,16 +2,10 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { decrypt } from "@/utils/crypt";
 import React, { useMemo } from "react";
 
-const AvatarIcon = ({ name, decrypted, img, size = 40 }) => {
+const AvatarIcon = ({ name, img, size = 40, className, imageClass }) => {
   const decryptedName = useMemo(() => {
-    if (!decrypted) return name;
-    try {
-      return decrypt(name) ? decrypt(name) : name; // fallback to original name if decryption fails
-    } catch (e) {
-      console.error("Failed to decrypt name:", e);
-      return name; // fallback to original name on decrypt error
-    }
-  }, [name, decrypted]);
+    return decrypt(name);
+  }, [name]);
 
   const initials = useMemo(() => {
     return decryptedName
@@ -22,27 +16,23 @@ const AvatarIcon = ({ name, decrypted, img, size = 40 }) => {
   }, [decryptedName]);
 
   const decryptedImg = useMemo(() => {
-    if (!decrypted || img === null || typeof img !== "string") return img;
-    if (img.startsWith("http://") || img.startsWith("https://")) {
-      return img; // Already a URL, no need to decrypt
-    }
-    try {
-      return decrypt(img);
-    } catch (e) {
-      console.error("Failed to decrypt image:", e);
-      return img; // fallback to original img on decrypt error
-    }
-  }, [img, decrypted]);
+    return decrypt(img);
+  }, [img]);
 
   const image = useMemo(() => {
     return decryptedImg !== null
       ? decryptedImg
-      : `https://ui-avatars.com/api/?name=${encodeURIComponent(initials)}&size=${size * 2}&background=random&rounded=true&bold=true&format=png`;
+      : `https://api.dicebear.com/10.x/glyphs/svg?borderRadius=45&seed=${encodeURIComponent(initials)}`;
   }, [decryptedImg, initials, size]);
 
   return (
-    <Avatar>
-      <AvatarImage src={image} alt={decryptedName} />
+    <Avatar className={className}>
+      <AvatarImage
+        className={imageClass}
+        src={image}
+        alt={decryptedName}
+        referrerPolicy="no-referrer"
+      />
       <AvatarFallback>{initials}</AvatarFallback>
     </Avatar>
   );

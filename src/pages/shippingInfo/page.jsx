@@ -2,9 +2,11 @@ import { Package, Clock, Truck, MapPin, IndianRupee, Search, Shield, AlertCircle
 import { useTranslation } from 'react-i18next';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { useStoreInfo } from '@/utils/store';
 
-export default function RazorbillsShipping() {
+export default function RazorbillzShipping() {
   const { t } = useTranslation();
+  const store = useStoreInfo();
 
   const processingSteps = [
     t('shipping.step1'),
@@ -382,8 +384,8 @@ export default function RazorbillsShipping() {
             </p>
             <div className="flex items-center justify-center gap-2 mb-6">
               <Mail className="w-5 h-5 text-amber-600" />
-              <a href="mailto:support@razorbills.com" className="text-lg font-semibold text-amber-600 hover:text-amber-700">
-                support@razorbills.com
+              <a href={`mailto:${store.emailSupport}`} className="text-lg font-semibold text-amber-600 hover:text-amber-700">
+                {store.emailSupport}
               </a>
             </div>
             <p className="text-neutral-700 dark:text-gray-300">

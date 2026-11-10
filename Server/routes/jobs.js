@@ -4,6 +4,7 @@ import { getAgenda } from "../utils/agenda.js";
 import { createExpressMiddleware } from "agendash";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import { requireAuth } from "../utils/middlewares/reqiuredAuth.js";
+import { owner } from "../utils/permissions.js";
 
 const router = express.Router();
 
@@ -12,7 +13,9 @@ router.use(
   checkDatabaseConnection,
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({
+    ...owner.statements,
+  }),
   async (req, res, next) => {
     const { agenda } = await getAgenda();
     const controller = createExpressMiddleware(agenda);
@@ -25,7 +28,9 @@ router.get(
   checkDatabaseConnection,
   requireAuth,
   requireAdmin,
-  requirePermission("write"),
+  requirePermission({
+    ...owner.statements,
+  }),
   async (req, res) => {
     const { agenda } = await getAgenda();
     await agenda.stop();

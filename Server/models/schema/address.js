@@ -47,11 +47,4 @@ class AddressMold {
   }
 }
 
-export const AddressBook = mongoose.model(
-  // currently unusable, instead use AddressMold to create new address objects and then save on user profile property addressBook array.
-  "AddressBook",
-  AddressSchema,
-  "addressbooks",
-);
-
 export { AddressMold };

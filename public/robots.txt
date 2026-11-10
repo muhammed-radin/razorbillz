@@ -1,8 +1,8 @@
-# robots.txt for RazorBills
+# robots.txt for Razorbillz
 User-agent: *
 Allow: /
 Disallow: /auth/
 Disallow: /admin/
 Disallow: /auth/admin
 
-Sitemap: https://razorbills.vercel.app/sitemap.xml
+Sitemap: https://razorbillz.vercel.app/sitemap.xml

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
+import { useApiCacheStore } from "@/stores/apiCacheStore";
 import {
   Star,
   ThumbsUp,
@@ -45,26 +47,37 @@ export function ReviewRatingSection({ productId, userId }) {
   // null = loading, [] = no comments (or 404 / error), otherwise server comments
   const [remoteReviews, setRemoteReviews] = useState(null);
 
-  const loadComments = useCallback(() => {
+  const loadComments = useCallback((force = false) => {
     if (!productId) {
       setRemoteReviews([]);
       return;
     }
-    commentsApi
-      .list(productId, { limit: 20, page: currentPage })
-      .then((data) => {
-        const list = Array.isArray(data) ? data : (data.comments ?? []);
-        setRemoteReviews(list.map(toReview));
-        setCurrentPage(1);
+    const cacheKey = `comments:${productId}:${currentPage}`;
+    useApiCacheStore
+      .getState()
+      .fetchWithCache(
+        cacheKey,
+        async () => {
+          const data = await commentsApi.list(productId, {
+            limit: 20,
+            page: currentPage,
+          });
+          const list = Array.isArray(data) ? data : (data.comments ?? []);
+          return list.map(toReview);
+        },
+        { ttl: 2 * 60 * 1000, forceRefresh: force }
+      )
+      .then((reviewsList) => {
+        setRemoteReviews(reviewsList);
       })
       .catch(() => {
         // 404 / logged out / offline -> show the empty state, not mock data
         setRemoteReviews([]);
       });
-  }, [productId]);
+  }, [productId, currentPage]);
 
-  useEffect(() => {
-    loadComments();
+  useStrictEffect(() => {
+    loadComments(false);
   }, [loadComments]);
 
   const reviews = useMemo(() => remoteReviews ?? [], [remoteReviews]);

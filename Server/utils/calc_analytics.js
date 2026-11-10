@@ -1,3 +1,10 @@
+/* Aggregate daily analytics documents into the shape used by
+ * `site_analytics` (`global_counters`).
+ *
+ * Field names follow the schemas:
+ *  - daily_analytics: products.views / products.searches / orders.total
+ *  - site_analytics:  orders.totalOrders / users.totalUsers
+ * Older documents may still use `viewed` / `total`; both are read. */
 export function calculateAnalyticsFrom(daysAnalytics = []) {
   const result = {
     events: {
@@ -14,6 +21,7 @@ export function calculateAnalyticsFrom(daysAnalytics = []) {
         desktop: 0,
         mobile: 0,
         tablet: 0,
+        other: 0,
       },
       sources: {
         chrome: 0,
@@ -28,12 +36,11 @@ export function calculateAnalyticsFrom(daysAnalytics = []) {
       signedUpUsers: 0,
       deletedUsers: 0,
       passwordChanged: 0,
-      totalUsers: 0, // This will be calculated as signedUpUsers - deletedUsers
+      totalUsers: 0, // signedUpUsers - deletedUsers
     },
     products: {
-      viewed: 0,
-      searched: 0,
-
+      views: 0,
+      searches: 0,
       lowStock: 0,
       outOfStock: 0,
       totalProducts: 0,
@@ -45,7 +52,7 @@ export function calculateAnalyticsFrom(daysAnalytics = []) {
       comments: 0,
     },
     orders: {
-      total: 0,
+      totalOrders: 0,
       revenue: 0,
       cancelled: 0,
       delivered: 0,
@@ -55,59 +62,75 @@ export function calculateAnalyticsFrom(daysAnalytics = []) {
       total: 0,
     },
     lastUpdated: new Date(),
-  }; // DATA TYPE: siteAnalyticsSchema;
-  // daysAnalytics.forEach((dayAnalytics) => {
-  //   // Aggregate data from each day's analytics into the result object
+  };
 
-  daysAnalytics.reduce((acc, dayAnalytics) => {
-    // Aggregate data from each day's analytics into the accumulator object
-    acc.events.total += dayAnalytics.events.total || 0;
-    acc.events.errors += dayAnalytics.events.errors || 0;
-    acc.events.sessions += dayAnalytics.events.sessions || 0;
+  const number = (value) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
 
-    acc.traffic.allViews += dayAnalytics.traffic.allViews || 0;
-    acc.traffic.debouncedViews += dayAnalytics.traffic.debouncedViews || 0;
-    acc.traffic.uniqueUsers += dayAnalytics.traffic.uniqueUsers || 0;
-    acc.traffic.uniqueGuests += dayAnalytics.traffic.uniqueGuests || 0;
+  daysAnalytics.forEach((day = {}) => {
+    const traffic = day.traffic ?? {};
+    const devices = traffic.devices ?? {};
+    const sources = traffic.sources ?? {};
+    const users = day.users ?? {};
+    const products = day.products ?? {};
+    const engagement = day.engagement ?? {};
+    const orders = day.orders ?? {};
+    const reviews = day.reviews ?? {};
+    const events = day.events ?? {};
 
-    acc.traffic.devices.desktop += dayAnalytics.traffic.devices.desktop || 0;
-    acc.traffic.devices.mobile += dayAnalytics.traffic.devices.mobile || 0;
-    acc.traffic.devices.tablet += dayAnalytics.traffic.devices.tablet || 0;
-    acc.traffic.devices.other += dayAnalytics.traffic.devices.other || 0;
+    result.events.total += number(events.total);
+    result.events.errors += number(events.errors);
+    result.events.sessions += number(events.sessions);
 
-    acc.traffic.sources.chrome += dayAnalytics.traffic.sources.chrome || 0;
-    acc.traffic.sources.firefox += dayAnalytics.traffic.sources.firefox || 0;
-    acc.traffic.sources.safari += dayAnalytics.traffic.sources.safari || 0;
-    acc.traffic.sources.edge += dayAnalytics.traffic.sources.edge || 0;
-    acc.traffic.sources.other += dayAnalytics.traffic.sources.other || 0;
+    result.traffic.allViews += number(traffic.allViews);
+    result.traffic.debouncedViews += number(traffic.debouncedViews);
+    result.traffic.uniqueUsers += number(traffic.uniqueUsers);
+    result.traffic.uniqueGuests += number(traffic.uniqueGuests);
 
-    acc.users.loggedInUsers += dayAnalytics.users.loggedInUsers || 0;
-    acc.users.signedUpUsers += dayAnalytics.users.signedUpUsers || 0;
-    acc.users.deletedUsers += dayAnalytics.users.deletedUsers || 0;
-    acc.users.passwordChanged += dayAnalytics.users.passwordChanged || 0;
+    result.traffic.devices.desktop += number(devices.desktop);
+    result.traffic.devices.mobile += number(devices.mobile);
+    result.traffic.devices.tablet += number(devices.tablet);
+    result.traffic.devices.other += number(devices.other);
 
-    acc.products.viewed += dayAnalytics.products.viewed || 0;
-    acc.products.searched += dayAnalytics.products.searched || 0;
-    acc.products.lowStock += dayAnalytics.products.lowStock || 0;
-    acc.products.outOfStock += dayAnalytics.products.outOfStock || 0;
-    acc.products.totalProducts += dayAnalytics.products.totalProducts || 0;
+    result.traffic.sources.chrome += number(sources.chrome);
+    result.traffic.sources.firefox += number(sources.firefox);
+    result.traffic.sources.safari += number(sources.safari);
+    result.traffic.sources.edge += number(sources.edge);
+    result.traffic.sources.other += number(sources.other);
 
-    acc.engagement.ratings += dayAnalytics.engagement.ratings || 0;
-    acc.engagement.shares += dayAnalytics.engagement.shares || 0;
-    acc.engagement.wishlists += dayAnalytics.engagement.wishlists || 0;
-    acc.engagement.comments += dayAnalytics.engagement.comments || 0;
+    result.users.loggedInUsers += number(users.loggedInUsers);
+    result.users.signedUpUsers += number(users.signedUpUsers);
+    result.users.deletedUsers += number(users.deletedUsers);
+    result.users.passwordChanged += number(users.passwordChanged);
 
-    acc.orders.total += dayAnalytics.orders.total || 0;
-    acc.orders.revenue += dayAnalytics.orders.revenue || 0;
-    acc.orders.cancelled += dayAnalytics.orders.cancelled || 0;
-    acc.orders.delivered += dayAnalytics.orders.delivered || 0;
-    acc.orders.returned += dayAnalytics.orders.returned || 0;
+    result.products.views += number(products.views ?? products.viewed);
+    result.products.searches += number(products.searches);
+    result.products.lowStock += number(products.lowStock);
+    result.products.outOfStock += number(products.outOfStock);
+    result.products.totalProducts += number(products.totalProducts);
 
-    acc.reviews.total += dayAnalytics.reviews.total || 0;
+    result.engagement.ratings += number(engagement.ratings);
+    result.engagement.shares += number(engagement.shares);
+    result.engagement.wishlists += number(engagement.wishlists);
+    result.engagement.comments += number(engagement.comments);
 
-    acc.users.totalUsers += dayAnalytics.users.signedUpUsers || 0;
-    acc.users.totalUsers -= dayAnalytics.users.deletedUsers || 0;
+    result.orders.totalOrders += number(orders.totalOrders ?? orders.total);
+    result.orders.revenue += number(orders.revenue);
+    result.orders.cancelled += number(orders.cancelled);
+    result.orders.delivered += number(orders.delivered);
+    result.orders.returned += number(orders.returned);
 
-    return acc; // Return the accumulator for the next iteration
-  }, result);
+    result.reviews.total += number(reviews.total);
+  });
+
+  result.users.totalUsers = Math.max(
+    0,
+    result.users.signedUpUsers - result.users.deletedUsers,
+  );
+
+  return result;
 }
+
+export default calculateAnalyticsFrom;

@@ -29,11 +29,11 @@ import {
   CommandList,
 } from "@/components/ui/command";
 import { Button } from "@/components/ui/button";
-import { Check, ChevronsUpDown, Plus, RefreshCcw, icons } from "lucide-react";
+import { Check, ChevronsUpDown, Plus, RefreshCcw } from "lucide-react";
 import { cn } from "@/lib/utils";
 import StyledMd from "@/components/styled-md";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { lazy, Suspense, useMemo, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { Skeleton } from "@/components/ui/skeleton";
 import CategoryCreatorModel from "@/components/category-creator-model";

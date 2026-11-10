@@ -1,99 +1,282 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <!-- Homepage -->
   <url>
     <loc>https://razorbills.vercel.app/</loc>
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Product Discovery & Search -->
   <url>
     <loc>https://razorbills.vercel.app/search</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/search</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Categories -->
+  <url>
+    <loc>https://razorbills.vercel.app/categories</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/categories</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.8</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Product Detail -->
   <url>
     <loc>https://razorbills.vercel.app/product</loc>
     <changefreq>weekly</changefreq>
     <priority>0.8</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
   <url>
-    <loc>https://razorbills.vercel.app/cart</loc>
+    <loc>https://razorbills.vercel.app/#/product</loc>
     <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-    <lastmod>2026-07-29</lastmod>
+    <priority>0.8</priority>
+    <lastmod>2026-10-13</lastmod>
   </url>
-  <url>
-    <loc>https://razorbills.vercel.app/login</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/signup</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.5</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/privacy</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/order</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/wishlist</loc>
-    <changefreq>weekly</changefreq>
-    <priority>0.6</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/settings</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
-  <url>
-    <loc>https://razorbills.vercel.app/addressbook</loc>
-    <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-    <lastmod>2026-07-29</lastmod>
-  </url>
+
+  <!-- Corporate & Informational -->
   <url>
     <loc>https://razorbills.vercel.app/about</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
   <url>
-    <loc>https://razorbills.vercel.app/terms</loc>
+    <loc>https://razorbills.vercel.app/#/about</loc>
     <changefreq>monthly</changefreq>
-    <priority>0.4</priority>
-    <lastmod>2026-07-29</lastmod>
+    <priority>0.7</priority>
+    <lastmod>2026-10-13</lastmod>
   </url>
+
+  <!-- Contact Us -->
   <url>
     <loc>https://razorbills.vercel.app/contact</loc>
     <changefreq>monthly</changefreq>
     <priority>0.7</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/contact</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.7</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Shopping Cart -->
+  <url>
+    <loc>https://razorbills.vercel.app/cart</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/cart</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Orders History -->
+  <url>
+    <loc>https://razorbills.vercel.app/order</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/order</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Wishlist -->
+  <url>
+    <loc>https://razorbills.vercel.app/wishlist</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/wishlist</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Order Status Tracking -->
+  <url>
+    <loc>https://razorbills.vercel.app/order-status</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/order-status</loc>
+    <changefreq>weekly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Customer Support -->
+  <url>
+    <loc>https://razorbills.vercel.app/support</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/support</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.6</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Shipping Policy -->
   <url>
     <loc>https://razorbills.vercel.app/shipping</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
   </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/shipping</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Return Policy -->
   <url>
     <loc>https://razorbills.vercel.app/return</loc>
     <changefreq>monthly</changefreq>
     <priority>0.5</priority>
-    <lastmod>2026-07-29</lastmod>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/return</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Authentication: Login -->
+  <url>
+    <loc>https://razorbills.vercel.app/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/login</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Authentication: Signup -->
+  <url>
+    <loc>https://razorbills.vercel.app/signup</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/signup</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Authentication: Forgot Password -->
+  <url>
+    <loc>https://razorbills.vercel.app/forgot-password</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/forgot-password</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Privacy Policy -->
+  <url>
+    <loc>https://razorbills.vercel.app/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/privacy</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Terms & Conditions -->
+  <url>
+    <loc>https://razorbills.vercel.app/terms</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/terms</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- User Account Settings -->
+  <url>
+    <loc>https://razorbills.vercel.app/settings</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/settings</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+
+  <!-- Address Book -->
+  <url>
+    <loc>https://razorbills.vercel.app/addressbook</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
+  </url>
+  <url>
+    <loc>https://razorbills.vercel.app/#/addressbook</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.4</priority>
+    <lastmod>2026-10-13</lastmod>
   </url>
 </urlset>

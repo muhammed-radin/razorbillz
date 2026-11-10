@@ -15,7 +15,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
 import { SelectLabel } from "@radix-ui/react-select";
 import { currency } from "@/utils/currency";
-import { useStore } from "../SearchPage";
+import { useStore } from "../useSearchStore";
 import { useTranslation } from "react-i18next";
 
 function FilterContent({

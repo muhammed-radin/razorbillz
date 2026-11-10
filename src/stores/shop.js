@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { cartApi, wishlistApi, addressApi, ordersApi } from "@/services/shop";
-import { MinimalProduct } from "@/models/product";
+import { MinimalProduct } from "@shared/models/product";
 import { api } from "@/utils/api";
 import {
   openAuthenticationModal,
@@ -43,11 +43,22 @@ const normalizeCart = (doc) => {
   }));
 };
 
+/* Delayed server sync for quantity edits: rapid +/- clicks apply
+ * instantly (optimistic) and flush ONE request per product after the
+ * user pauses. Aborts superseded flights, rolls back on failure. */
+const qtyTimers = new Map();
+const qtyControllers = new Map();
+/* Last server-confirmed items per product, captured before the first
+ * optimistic edit, so a failed/superseded sync can roll back safely. */
+const qtySnapshots = new Map();
+const QTY_SYNC_DELAY_MS = 600;
+
 export const useCartStore = create((set, get) => ({
   items: [],
   loading: false,
   error: null,
   serverBacked: true,
+  syncing: {},
 
   fetch: async () => {
     const isSignedIn = await validateSignInModalRequired();
@@ -115,27 +126,112 @@ export const useCartStore = create((set, get) => ({
     set({ items });
   },
 
+  /* Push ONE quantity update for a product using the latest optimistic
+   * value. Rolls back to the last server-confirmed snapshot on failure.
+   * Shared by the debounced setQuantity and the pre-checkout flush. */
+  syncQuantity: async (productId, controller) => {
+    const snapshot =
+      qtySnapshots.get(productId) ?? get().items.map((i) => ({ ...i }));
+    try {
+      const latest =
+        get().items.find((i) => i.productId === productId)?.quantity ?? 1;
+      const cart = await cartApi.setQuantity(
+        productId,
+        latest,
+        controller?.signal,
+      );
+      if (controller?.signal.aborted) return;
+      set({
+        items: normalizeCart(cart),
+        error: null,
+        syncing: { ...get().syncing, [productId]: false },
+      });
+    } catch (err) {
+      if (controller?.signal.aborted) return;
+      // Roll back to the last server-confirmed snapshot.
+      set({
+        items: snapshot,
+        error: err,
+        syncing: { ...get().syncing, [productId]: false },
+      });
+      const { toast } = await import("sonner");
+      toast.error("Couldn't sync quantity — restored previous value.");
+      throw err;
+    } finally {
+      qtyTimers.delete(productId);
+      if (qtyControllers.get(productId) === controller) {
+        qtyControllers.delete(productId);
+        qtySnapshots.delete(productId);
+      }
+    }
+  },
+
   setQuantity: async (productId, quantity) => {
     const isSignedIn = await openAuthenticationModal();
     if (!isSignedIn) {
       throw new Error({ message: "User is not signed in", errorCode: 403 }); // User is not signed in, exit the function
     }
 
-    if (get().serverBacked) {
-      try {
-        const cart = await cartApi.setQuantity(productId, quantity);
-        set({ items: normalizeCart(cart), error: null });
-        return;
-      } catch (err) {
-        set({ error: err });
-        throw err;
-      }
+    const nextQty = Math.max(1, Math.floor(Number(quantity) || 1));
+
+    if (!get().serverBacked) {
+      const items = get().items.map((i) =>
+        i.productId === productId ? { ...i, quantity: nextQty } : i,
+      );
+      writeLocal("guest-cart", items);
+      set({ items });
+      return;
     }
-    const items = get().items.map((i) =>
-      i.productId === productId ? { ...i, quantity } : i,
+
+    /* Keep the LAST server-confirmed snapshot (not the optimistic one)
+     * so rapid +/- clicks still roll back to the correct value. */
+    if (!qtySnapshots.has(productId)) {
+      qtySnapshots.set(
+        productId,
+        get().items.map((i) => ({ ...i })),
+      );
+    }
+
+    // Optimistic: reflect instantly, sync with the server after a pause.
+    set((state) => ({
+      items: state.items.map((i) =>
+        i.productId === productId ? { ...i, quantity: nextQty } : i,
+      ),
+      syncing: { ...state.syncing, [productId]: true },
+    }));
+
+    clearTimeout(qtyTimers.get(productId));
+    qtyControllers.get(productId)?.abort();
+    const controller = new AbortController();
+    qtyControllers.set(productId, controller);
+    qtyTimers.set(
+      productId,
+      setTimeout(() => {
+        get()
+          .syncQuantity(productId, controller)
+          .catch(() => {});
+      }, QTY_SYNC_DELAY_MS),
     );
-    writeLocal("guest-cart", items);
-    set({ items });
+  },
+
+  /* Immediately push every pending optimistic quantity change to the
+   * server and resolve once they all settle. Used before checkout so the
+   * server cart can never lag behind what the user sees. Rejects if any
+   * sync fails (the store has already rolled back + surfaced the error). */
+  flushQuantitySync: async () => {
+    const pendingIds = [...qtyTimers.keys()];
+    if (pendingIds.length === 0) return;
+
+    const flights = pendingIds.map((productId) => {
+      clearTimeout(qtyTimers.get(productId));
+      qtyTimers.delete(productId);
+      qtyControllers.get(productId)?.abort();
+      const controller = new AbortController();
+      qtyControllers.set(productId, controller);
+      return get().syncQuantity(productId, controller);
+    });
+
+    await Promise.all(flights);
   },
 
   remove: async (productId) => {
@@ -185,7 +281,7 @@ const toWishlistSnapshot = (product) =>
   });
 
 export const useWishlistStore = create((set, get) => ({
-  items: [],
+  items: readLocal("guest-wishlist", []),
   loading: false,
   error: null,
   serverBacked: true,
@@ -193,8 +289,8 @@ export const useWishlistStore = create((set, get) => ({
   fetch: async (folder = "/") => {
     const isSignedIn = await validateSignInModalRequired();
     if (!isSignedIn) {
-      set({ items: [], serverBacked: false });
-      throw new Error({ message: "User is not signed in", errorCode: 403 }); // User is not signed in, exit the function
+      set({ items: readLocal("guest-wishlist", []), serverBacked: false });
+      return;
     }
 
     set({ loading: true, error: null });
@@ -218,7 +314,7 @@ export const useWishlistStore = create((set, get) => ({
   },
 
   has: (productId) =>
-    get().items.some((p) => (p.productId ?? p.id) === productId),
+    get().items.some((p) => String(p.productId ?? p.id) === String(productId)),
 
   toggle: async (product, folder = "/") => {
     const isSignedIn = await openAuthenticationModal();
@@ -267,7 +363,12 @@ export const useWishlistStore = create((set, get) => ({
     if (get().serverBacked && isSignedIn) {
       try {
         const doc = await wishlistApi.remove(productId, folder);
-        set({ items: doc.products ?? [], error: null });
+        set({
+          items:
+            doc.products ??
+            get().items.filter((p) => (p.productId ?? p.id) !== productId),
+          error: null,
+        });
         return;
       } catch (err) {
         set({ error: err });
@@ -405,7 +506,13 @@ export const useOrderStore = create((set) => ({
     set({ loading: true, error: null });
     try {
       const orders = await ordersApi.userOrders();
-      set({ orders: Array.isArray(orders) ? orders : [], loading: false });
+      set({
+        orders: Array.isArray(orders)
+          ? orders.sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+          : [],
+        loading: false,
+      });
+      console.log("Fetched user orders:", orders);
     } catch (err) {
       set({ loading: false, error: err });
     }
@@ -426,13 +533,13 @@ export const useOrderStore = create((set) => ({
     return order;
   },
 
-  cancel: async (id, reason) => {
-    await ordersApi.cancel(id, reason);
+  cancel: async (id, reason, detail) => {
+    await ordersApi.cancel(id, reason, detail);
     await useOrderStore.getState().fetchUserOrders();
   },
 
-  requestReturn: async (id, reason) => {
-    await ordersApi.requestReturn(id, reason);
+  requestReturn: async (id, reason, detail) => {
+    await ordersApi.requestReturn(id, reason, detail);
     await useOrderStore.getState().fetchUserOrders();
   },
 }));

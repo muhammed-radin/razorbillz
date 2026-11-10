@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, memo } from "react";
+import { useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/utils/api";
-import axios from "axios";
 import { currency as formatCurrency } from "@/utils/currency";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 // components
 import HeroHeader from "./components/hero-header.admin";
@@ -29,53 +29,87 @@ import PaginationWithPrimaryButton from "@/components/customized/pagination/pagi
 export default function AdminProductsPage() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [statics, setStatics] = useState(false);
+  const [totalCount, setTotalCount] = useState(0);
   const [isOpenDeleteConfirm, setIsOpenDeleteConfirm] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [filteredProducts, setFilteredProducts] = useState([]);
   const [viewMode, setViewMode] = useState("grid"); // grid or list
   const [totalPages, setTotalPages] = useState(5);
   const { current: itemsPerPage } = useRef(10);
+  const searchTimer = useRef(null);
+  const lastSearchRef = useRef(null);
 
   const [currentPage, setCurrentPage] = useSearchParams();
 
   if (!currentPage.get("page")) {
     currentPage.set("page", "1");
   }
+  const pageNum = parseInt(currentPage.get("page") || "1", 10) || 1;
 
-  useEffect(() => {
-    fetchProducts();
+  // Server-side search + pagination: GET /api/products?search=&page=&limit=
+  // One effect drives both page changes and debounced text search, so the
+  // initial mount no longer fires the page fetch and the search timer twice.
+  useStrictEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+
+    const term = searchQuery.trim();
+    const changedSearch = lastSearchRef.current !== term;
+    lastSearchRef.current = term;
+
+    // A new search always starts from page 1.
+    if (term && pageNum !== 1) {
+      setCurrentPage({ page: "1" });
+      return;
+    }
+
+    if (changedSearch && term) {
+      searchTimer.current = setTimeout(() => {
+        fetchProducts(1, term);
+      }, 400);
+      return () => {
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+      };
+    }
+
+    fetchProducts(pageNum, term);
+    return () => {
+      if (searchTimer.current) clearTimeout(searchTimer.current);
+    };
+  }, [pageNum, searchQuery]);
+
+  useStrictEffect(() => {
     fetchProductStatics();
   }, []);
 
-  useEffect(() => {
-    if (searchQuery.trim() === "") {
-      setFilteredProducts(products);
-    } else {
-      const filtered = products.filter(
-        (product) =>
-          product.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.brand.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.category.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          product.sku.toLowerCase().includes(searchQuery.toLowerCase()),
-      );
-      setFilteredProducts(filtered);
-    }
-  }, [searchQuery, products]);
-
-  const fetchProducts = async () => {
+  const fetchProducts = async (page = 1, search = "") => {
     try {
       setLoading(true);
+      setLoadError(null);
       const response = await api.client.get(api.products(), {
-        page: currentPage.get("page"),
-        realtime: "true",
+        params: {
+          page,
+          limit: itemsPerPage,
+          ...(search?.trim() ? { search: search.trim() } : {}),
+          realtime: "true",
+        },
       });
 
       setProducts(response.data.products || []);
-      setFilteredProducts(response.data.products || []);
       setTotalPages(response.data.totalPages || 1);
+      setTotalCount(
+        typeof response.data.count === "number"
+          ? response.data.count
+          : (response.data.products || []).length,
+      );
     } catch (error) {
       console.error("Error fetching products:", error);
+      setProducts([]);
+      setLoadError(
+        error?.response?.status === 403
+          ? "Admin access required to view products."
+          : "Could not load products. Check the connection and retry.",
+      );
     } finally {
       setLoading(false);
     }
@@ -107,7 +141,7 @@ export default function AdminProductsPage() {
                   return;
                 }
                 resolveui("Product deleted successfully");
-                fetchProducts(); // Refresh the product list after deletion
+                fetchProducts(pageNum, searchQuery); // Refresh the product list after deletion
               })
               .catch((error) => {
                 rejectui(error);
@@ -117,7 +151,7 @@ export default function AdminProductsPage() {
         {
           loading: "Deleting product...",
           success: "Product deleted successfully",
-          error: "Error deleting product",
+          error: (err) => err?.response?.data?.error ?? "Error deleting product",
         },
       );
     } catch (error) {
@@ -156,7 +190,7 @@ export default function AdminProductsPage() {
 
         {/* Stats Cards */}
         <StatsCards
-          totalProducts={filteredProducts.length}
+          totalProducts={totalCount}
           lowStockCount={lowStockCount}
           outOfStockCount={outOfStockCount}
           inStockCount={inStockCount}
@@ -172,6 +206,18 @@ export default function AdminProductsPage() {
         />
 
         {/* Products Display */}
+        {loadError && (
+          <div className="flex flex-wrap items-center gap-3 rounded-xl border border-destructive/30 bg-destructive/5 p-4 text-sm">
+            <span className="flex-1 text-destructive">{loadError}</span>
+            <Button
+              onClick={() => fetchProducts(pageNum, searchQuery)}
+              variant="outline"
+              size="sm"
+            >
+              Retry
+            </Button>
+          </div>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex flex-col items-center gap-4">
@@ -181,7 +227,7 @@ export default function AdminProductsPage() {
               </p>
             </div>
           </div>
-        ) : filteredProducts.length === 0 ? (
+        ) : products.length === 0 ? (
           <Card>
             <CardContent className="flex flex-col items-center justify-center py-20 text-center">
               <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center mb-6">
@@ -206,7 +252,7 @@ export default function AdminProductsPage() {
         ) : viewMode === "grid" ? (
           /* Grid View */
           <GridViewAdmin
-            products={filteredProducts}
+            products={products}
             handleDelete={handleDelete}
             getStockStatus={getStockStatus}
             formatCurrency={formatCurrency}
@@ -215,7 +261,7 @@ export default function AdminProductsPage() {
           /* List View */
           <ListViewAdmin
             Badge={Badge}
-            products={filteredProducts}
+            products={products}
             handleDelete={handleDelete}
             getStockStatus={getStockStatus}
             formatCurrency={formatCurrency}

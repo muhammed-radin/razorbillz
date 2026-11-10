@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { useTranslation } from "react-i18next";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
@@ -11,7 +12,6 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Separator } from "@/components/ui/separator";
 import {
   User,
   Users,
@@ -25,72 +25,82 @@ import {
 } from "lucide-react";
 import { useTheme } from "@/utils/theme-provider";
 import { toast } from "sonner";
+import { api } from "@/utils/api";
+import { decryptField } from "@/utils/crypt";
+import { useUserSession } from "@/contexts/user-session-context";
+import AvatarIcon from "@/components/avatar-icon";
 
 export default function AdminSettingsPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { theme, setTheme } = useTheme();
+  const { data: session, isPending } = useUserSession();
+  const [admins, setAdmins] = useState([]);
+  const [loadingAdmins, setLoadingAdmins] = useState(true);
+  const [adminError, setAdminError] = useState(null);
+  const [loggingOut, setLoggingOut] = useState(false);
 
-  // Logged-in admin info (View-only)
-  const currentAdmin = {
-    name: "Admin Administrator",
-    email: "admin@razorbills.com",
-    avatar: "",
-    role: "Super Admin",
-  };
+  const current = session?.user ?? null;
 
-  // Mock list of up to 10 admins
-  const adminList = [
-    {
-      id: 1,
-      name: "Admin Administrator",
-      email: "admin@razorbills.com",
-      avatar: "",
-      role: "Super Admin",
-      isCurrent: true,
-    },
-    {
-      id: 2,
-      name: "Mohammed Radheef",
-      email: "radheef@razorbills.com",
-      avatar: "",
-      role: "Admin",
-      isCurrent: false,
-    },
-    {
-      id: 3,
-      name: "Aisha Rahman",
-      email: "aisha.r@razorbills.com",
-      avatar: "",
-      role: "Admin",
-      isCurrent: false,
-    },
-    {
-      id: 4,
-      name: "Siddharth Menon",
-      email: "siddharth.m@razorbills.com",
-      avatar: "",
-      role: "Admin",
-      isCurrent: false,
-    },
-    {
-      id: 5,
-      name: "Ananya Nair",
-      email: "ananya.n@razorbills.com",
-      avatar: "",
-      role: "Admin",
-      isCurrent: false,
-    },
-  ];
+  useStrictEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        setLoadingAdmins(true);
+        setAdminError(null);
+        const { usersApi } = await import("@/services/shop");
+        const data = await usersApi.list({
+          limit: 50,
+          roles: "admin,owner",
+        });
+        const users = Array.isArray(data) ? data : (data.users ?? []);
+        if (!cancelled) {
+          setAdmins(
+            users
+              .filter((u) => u.role === "admin" || u.role === "owner")
+              .map((u) => ({
+                ...u,
+                // Names are end-to-end encrypted at rest.
+                name: decryptField(u.name) ?? "Unknown",
+              }))
+              .slice(0, 10),
+          );
+        }
+      } catch (err) {
+        console.error("Error fetching admins:", err);
+        if (!cancelled) {
+          setAdmins([]);
+          setAdminError(
+            err?.response?.status === 403
+              ? "Admin access required to view the admin list."
+              : "Could not load the admin list. Check the connection and retry.",
+          );
+        }
+      } finally {
+        if (!cancelled) setLoadingAdmins(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
-  // Handle Logout
-  const handleLogout = () => {
-    toast.info("Logged out of Admin session");
-    navigate("/auth");
+  const handleLogout = async () => {
+    try {
+      setLoggingOut(true);
+      await api.actions.logOut();
+      toast.success("Logged out of Admin session");
+      navigate("/login");
+    } catch (err) {
+      console.error("Admin logout failed:", err);
+      toast.error("Logout failed. Please try again.");
+    } finally {
+      setLoggingOut(false);
+    }
   };
 
   const getInitials = (name) => {
-    return name
+    return (name ?? "?")
       .split(" ")
       .map((n) => n[0])
       .join("")
@@ -98,10 +108,21 @@ export default function AdminSettingsPage() {
       .toUpperCase();
   };
 
+  const displayName = current?.name ?? "Admin";
+  const displayEmail = current?.email ?? "";
+  const displayRole =
+    current?.role === "owner"
+      ? "Owner"
+      : current?.role === "admin"
+        ? "Admin"
+        : "Admin";
+
   return (
     <div className="p-6 max-w-4xl mx-auto space-y-6">
       <Helmet>
-        <title>{t("adminSettings.title")} - RazorBills</title>
+        {/* Single expression: react-helmet-async renders nothing for a <title>
+         * assembled from multiple JSX children. */}
+        <title>{`${t("adminSettings.title")} - ${t("store.name")}`}</title>
       </Helmet>
 
       <div>
@@ -114,8 +135,8 @@ export default function AdminSettingsPage() {
       </div>
 
       <div className="space-y-6">
-        {/* 1. Admin Profile (View-only) */}
-        <Card>
+        {/* 1. Admin Profile (live session) */}
+        <Card className="bg-background">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <User className="w-5 h-5 text-primary" />
@@ -127,80 +148,97 @@ export default function AdminSettingsPage() {
           </CardHeader>
           <CardContent>
             <div className="flex flex-col sm:flex-row sm:items-center gap-6 p-4 rounded-lg bg-muted/30 border">
-              <Avatar className="h-16 w-16 border-2 border-primary/20">
-                <AvatarImage src={currentAdmin.avatar} alt={currentAdmin.name} />
-                <AvatarFallback className="text-lg font-bold bg-primary/10 text-primary">
-                  {getInitials(currentAdmin.name)}
-                </AvatarFallback>
-              </Avatar>
+              <AvatarIcon
+                name={current?.name}
+                img={current?.image}
+                className="h-16 w-16 border-2 border-primary/20"
+              />
 
               <div className="space-y-1 flex-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-semibold text-foreground">
-                    {currentAdmin.name}
+                    {isPending ? "Loading…" : displayName}
                   </h3>
                   <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary font-medium">
                     <ShieldCheck className="w-3 h-3" />
-                    {currentAdmin.role}
+                    {displayRole}
                   </span>
                 </div>
                 <p className="text-sm text-muted-foreground flex items-center gap-1.5">
                   <Mail className="w-3.5 h-3.5" />
-                  {currentAdmin.email}
+                  {displayEmail}
                 </p>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* 2. Admin List (Max 10) */}
-        <Card>
+        {/* 2. Admin List (live, max 10) */}
+        <Card className="bg-background">
           <CardHeader>
             <CardTitle className="flex items-center gap-2 text-lg">
               <Users className="w-5 h-5 text-primary" />
               {t("adminSettings.admins")}
             </CardTitle>
-            <CardDescription>
-              {t("adminSettings.adminsDesc")}
-            </CardDescription>
+            <CardDescription>{t("adminSettings.adminsDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="divide-y rounded-lg border bg-card">
-              {adminList.slice(0, 10).map((admin) => (
-                <div
-                  key={admin.id}
-                  className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors"
+            {loadingAdmins ? (
+              <p className="text-sm text-muted-foreground p-4">
+                Loading administrators…
+              </p>
+            ) : adminError ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm">
+                <span className="flex-1 text-destructive">{adminError}</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => window.location.reload()}
                 >
-                  <div className="flex items-center gap-3.5">
-                    <Avatar className="h-10 w-10 border">
-                      <AvatarImage src={admin.avatar} alt={admin.name} />
-                      <AvatarFallback className="font-semibold text-xs bg-muted">
-                        {getInitials(admin.name)}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-semibold text-foreground">
-                          {admin.name}
-                        </span>
-                        {admin.isCurrent && (
-                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
-                            You
+                  Retry
+                </Button>
+              </div>
+            ) : admins.length === 0 ? (
+              <p className="text-sm text-muted-foreground p-4">
+                No administrator accounts found.
+              </p>
+            ) : (
+              <div className="divide-y rounded-lg border bg-card">
+                {admins.slice(0, 10).map((admin) => (
+                  <div
+                    key={admin.id ?? admin._id}
+                    className="flex items-center justify-between p-4 hover:bg-muted/20 transition-colors"
+                  >
+                    <div className="flex items-center gap-3.5">
+                      <AvatarIcon
+                        name={admin.name}
+                        img={admin.image}
+                        className="h-10 w-10 border"
+                      />
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-semibold text-foreground">
+                            {admin.name ?? "Unknown"}
                           </span>
-                        )}
+                          {current && admin.id === current.id && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
+                              You
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-muted-foreground block">
+                          {admin.email ?? ""}
+                        </span>
                       </div>
-                      <span className="text-xs text-muted-foreground block">
-                        {admin.email}
-                      </span>
                     </div>
-                  </div>
 
-                  <span className="text-xs text-muted-foreground font-medium px-2 py-1 rounded bg-muted">
-                    {admin.role}
-                  </span>
-                </div>
-              ))}
-            </div>
+                    <span className="text-xs text-muted-foreground font-medium px-2 py-1 rounded bg-muted capitalize">
+                      {admin.role ?? "admin"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -211,9 +249,7 @@ export default function AdminSettingsPage() {
               <Palette className="w-5 h-5 text-primary" />
               {t("adminSettings.theme")}
             </CardTitle>
-            <CardDescription>
-              {t("adminSettings.themeDesc")}
-            </CardDescription>
+            <CardDescription>{t("adminSettings.themeDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -274,9 +310,7 @@ export default function AdminSettingsPage() {
             <CardTitle className="text-lg">
               {t("adminSettings.account")}
             </CardTitle>
-            <CardDescription>
-              {t("adminSettings.accountDesc")}
-            </CardDescription>
+            <CardDescription>{t("adminSettings.accountDesc")}</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="flex items-center justify-between p-4 rounded-lg border bg-muted/30">
@@ -292,10 +326,11 @@ export default function AdminSettingsPage() {
                 variant="outline"
                 size="sm"
                 onClick={handleLogout}
+                disabled={loggingOut}
                 className="gap-2 text-destructive hover:text-destructive hover:bg-destructive/10"
               >
                 <LogOut className="w-4 h-4" />
-                {t("adminSettings.logout")}
+                {loggingOut ? "Logging out…" : t("adminSettings.logout")}
               </Button>
             </div>
           </CardContent>

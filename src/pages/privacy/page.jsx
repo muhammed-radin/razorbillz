@@ -1,9 +1,11 @@
 import React from "react";
 import { useTranslation } from "react-i18next";
 import { Separator } from "@/components/ui/separator";
+import { useStoreInfo } from "@/utils/store";
 
 const PrivacyPolicyPage = () => {
   const { t } = useTranslation();
+  const store = useStoreInfo();
 
   return (
     <div className="min-h-screen">
@@ -181,7 +183,7 @@ const PrivacyPolicyPage = () => {
             </p>
             <div className="bg-muted p-6 rounded-lg space-y-2">
               <p><strong>{t("privacy.team")}</strong></p>
-              <p>{t("privacy.email")}</p>
+              <p>{t("privacy.email", { email: store.emailPrivacy })}</p>
             </div>
             <p className="text-muted-foreground mt-4">
               {t("privacy.commitment")}

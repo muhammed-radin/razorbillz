@@ -1,8 +1,8 @@
- # Razorbills
+ # Razorbillz
 
 ## Overview
 
-Razorbills is a web project. This file provides a concise guide for language models working with the project.
+Razorbillz is a web project. This file provides a concise guide for language models working with the project.
 
 ## Repository guidance
 

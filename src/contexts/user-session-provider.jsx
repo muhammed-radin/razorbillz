@@ -14,23 +14,31 @@ export function UserSessionProvider({ children }) {
   });
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchSession() {
+      // Mark loading explicitly: consumers (e.g. the admin gate) must wait
+      // for in-flight refetches instead of judging stale null data.
+      setSessionState((s) => ({ ...s, isPending: true, error: null }));
       try {
         const sessionData = await api.getSession(); // Your custom async API call
-
-        setSessionState(sessionData);
+        if (!cancelled) setSessionState({ ...sessionData, isPending: false });
       } catch (err) {
         console.error("Failed to fetch session:", err);
-        setSessionState({
-          data: null,
-          isPending: false,
-          error: err,
-          updated: null,
-        });
+        if (!cancelled) {
+          setSessionState({
+            data: null,
+            isPending: false,
+            error: err,
+            updated: null,
+          });
+        }
       }
     }
 
     fetchSession();
+    return () => {
+      cancelled = true;
+    };
   }, [location.pathname]); // Re-fetch session when the location changes
 
   // Pass down the entire object so it mirrors better-auth's useSession hook structure

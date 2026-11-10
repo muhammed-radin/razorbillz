@@ -1,6 +1,7 @@
 import { useState } from "react";
-import { Helmet } from "react-helmet-async";
 import { useTranslation } from "react-i18next";
+import { StoreMeta } from "@/components/store-meta";
+import { useStoreInfo } from "@/utils/store";
 import {
   Package,
   Shield,
@@ -12,17 +13,18 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function RazorbillsAbout() {
+export default function RazorbillzAbout() {
   const [hoveredCard, setHoveredCard] = useState(null);
   const { t } = useTranslation();
+  const store = useStoreInfo();
 
   return (
     <div className="min-h-screen bg-white text-neutral-900 dark:bg-black/10 dark:text-gray-100">
-      <Helmet>
-        <title>{t("about.helmetTitle")}</title>
-        <meta name="description" content="Learn about RazorBills, our mission to provide industrial-grade electronic components for engineers, makers, startups, and institutions with a focus on accessibility and affordability." />
-        <meta name="keywords" content="about us, razorbills, electronics, components, mission, vision, industrial-grade" />
-      </Helmet>
+      <StoreMeta
+        title={t("about.title")}
+        description={`Learn about ${store.name}, our mission to provide quality products across categories with a focus on accessibility and affordability.`}
+        keywords={`about us, ${store.name}, products, shopping, mission, vision, quality`}
+      />
       {/* Header*/}
       <div className="relative overflow-hidden border-b dark:border-neutral-700">
         <div className="absolute inset-0"></div>

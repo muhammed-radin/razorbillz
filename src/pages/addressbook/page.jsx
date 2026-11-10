@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -53,7 +54,15 @@ import {
   User,
   X,
   MapPinned,
+  BadgeCheck,
+  Loader2,
+  AlertTriangle,
 } from "lucide-react";
+import {
+  lookupPincode,
+  isPincodeFormatValid,
+  INDIAN_STATES,
+} from "@/utils/addressValidation";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { useAddressStore, AddressMold } from "@/stores/shop";
@@ -95,7 +104,10 @@ const addressFormSchema = z.object({
   type: z.enum(["home", "work", "other"]),
   street: z.string().trim().min(1, "Enter a street address"),
   city: z.string().trim().min(1, "Enter a city"),
-  state: z.string().trim().min(1, "Enter a state"),
+  state: z
+    .string()
+    .trim()
+    .refine((v) => INDIAN_STATES.includes(v), "Select a valid Indian state"),
   postalCode: z
     .string()
     .trim()
@@ -169,7 +181,7 @@ const AddressBookPage = () => {
     postalCode: "",
   });
 
-  useEffect(() => {
+  useStrictEffect(() => {
     setMounted(true);
     fetchAddresses().catch(() => {});
   }, [fetchAddresses]);
@@ -280,7 +292,7 @@ const AddressBookPage = () => {
                 fetchAddresses();
                 resolve();
               })
-              .catch((err) => reject());
+              .catch(() => reject());
           }),
         {
           loading: t("address.settingDefault", {
@@ -644,11 +656,55 @@ const AddressBookPage = () => {
 const AddressForm = ({ address, setAddress, onSubmit, submitLabel }) => {
   const { t } = useTranslation();
   const [errors, setErrors] = useState({});
+  const [pinStatus, setPinStatus] = useState({
+    state: "idle",
+    city: "",
+    stateName: "",
+  });
+  const [submitting, setSubmitting] = useState(false);
 
   const updateAddress = (field, value) => {
     setAddress({ ...address, [field]: value });
     setErrors((currentErrors) => ({ ...currentErrors, [field]: undefined }));
   };
+
+  /* Live pincode verification (India Post) with city/state autofill. */
+  useEffect(() => {
+    const pin = String(address.postalCode ?? "").trim();
+    if (!isPincodeFormatValid(pin)) {
+      setPinStatus({ state: pin ? "invalid" : "idle", city: "", stateName: "" });
+      return;
+    }
+    let cancelled = false;
+    setPinStatus({ state: "checking", city: "", stateName: "" });
+    const timer = setTimeout(async () => {
+      const result = await lookupPincode(pin);
+      if (cancelled) return;
+      if (result.exists && !result.unverified) {
+        setPinStatus({
+          state: "verified",
+          city: result.city,
+          stateName: result.state,
+        });
+        // Autofill empty city/state from the verified pincode.
+        setAddress((prev) => ({
+          ...prev,
+          city: prev.city?.trim() ? prev.city : (result.city ?? prev.city),
+          state: prev.state?.trim() ? prev.state : (result.state ?? prev.state),
+        }));
+      } else if (result.exists && result.unverified) {
+        setPinStatus({ state: "unverified", city: "", stateName: "" });
+      } else {
+        setPinStatus({ state: "not-found", city: "", stateName: "" });
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+    // setAddress is a stable useState setter in all call sites.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [address.postalCode]);
 
   const handlePhoneKeyDown = (event) => {
     if (
@@ -670,7 +726,7 @@ const AddressForm = ({ address, setAddress, onSubmit, submitLabel }) => {
     );
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     const result = addressFormSchema.safeParse(address);
     if (!result.success) {
       const nextErrors = {};
@@ -681,11 +737,25 @@ const AddressForm = ({ address, setAddress, onSubmit, submitLabel }) => {
       return;
     }
 
+    // Existence check: reject pincodes India Post reports as not-found.
+    if (pinStatus.state === "not-found") {
+      setErrors((e) => ({
+        ...e,
+        postalCode: "This pincode does not exist. Check the digits.",
+      }));
+      return;
+    }
+
     setErrors({});
-    onSubmit({
-      ...result.data,
-      phoneNumber: normalizePhoneNumber(result.data.phoneNumber),
-    });
+    setSubmitting(true);
+    try {
+      await onSubmit({
+        ...result.data,
+        phoneNumber: normalizePhoneNumber(result.data.phoneNumber),
+      });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -794,28 +864,78 @@ const AddressForm = ({ address, setAddress, onSubmit, submitLabel }) => {
         </div>
         <div className="space-y-2">
           <Label htmlFor="state">{t("address.state")}</Label>
-          <Input
-            id="state"
-            placeholder={t("address.statePlaceholder")}
-            value={address.state}
-            onChange={(e) => updateAddress("state", e.target.value)}
-            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20"
-          />
+          <Select
+            value={INDIAN_STATES.includes(address.state) ? address.state : ""}
+            onValueChange={(value) => updateAddress("state", value)}
+          >
+            <SelectTrigger className="transition-all duration-300 focus:ring-2 focus:ring-primary/20">
+              <SelectValue placeholder={t("address.statePlaceholder")} />
+            </SelectTrigger>
+            <SelectContent className="max-h-60">
+              {INDIAN_STATES.map((st) => (
+                <SelectItem key={st} value={st}>
+                  {st}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           {errors.state && (
             <p className="text-sm text-destructive">{errors.state}</p>
           )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="pincode">{t("address.pinCode")}</Label>
-          <Input
-            id="pincode"
-            placeholder={t("address.pinCodePlaceholder")}
-            value={address.postalCode}
-            onChange={(e) =>
-              updateAddress("postalCode", formatPostalCode(e.target.value))
-            }
-            className="transition-all duration-300 focus:ring-2 focus:ring-primary/20"
-          />
+          <div className="relative">
+            <Input
+              id="pincode"
+              inputMode="numeric"
+              placeholder={t("address.pinCodePlaceholder")}
+              value={address.postalCode}
+              onChange={(e) =>
+                updateAddress("postalCode", formatPostalCode(e.target.value))
+              }
+              className="transition-all duration-300 focus:ring-2 focus:ring-primary/20 pr-10"
+            />
+            <span className="absolute right-3 top-1/2 -translate-y-1/2">
+              {pinStatus.state === "checking" && (
+                <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+              )}
+              {pinStatus.state === "verified" && (
+                <BadgeCheck
+                  className="w-4 h-4 text-green-600"
+                  aria-label="Pincode verified"
+                />
+              )}
+              {(pinStatus.state === "not-found" ||
+                pinStatus.state === "invalid") &&
+                address.postalCode && (
+                  <AlertTriangle
+                    className="w-4 h-4 text-destructive"
+                    aria-label="Pincode issue"
+                  />
+                )}
+            </span>
+          </div>
+          {pinStatus.state === "verified" && pinStatus.city && (
+            <p className="text-xs text-green-700 dark:text-green-400 flex items-center gap-1">
+              <BadgeCheck className="w-3 h-3" />
+              {pinStatus.city}
+              {pinStatus.stateName ? `, ${pinStatus.stateName}` : ""} — verified
+              via India Post
+            </p>
+          )}
+          {pinStatus.state === "not-found" && (
+            <p className="text-xs text-destructive flex items-center gap-1">
+              <AlertTriangle className="w-3 h-3" />
+              Pincode not found in postal records.
+            </p>
+          )}
+          {pinStatus.state === "unverified" && (
+            <p className="text-xs text-muted-foreground">
+              Format valid — postal lookup unreachable, will verify at checkout
+              via courier serviceability.
+            </p>
+          )}
           {errors.postalCode && (
             <p className="text-sm text-destructive">{errors.postalCode}</p>
           )}
@@ -826,9 +946,14 @@ const AddressForm = ({ address, setAddress, onSubmit, submitLabel }) => {
         <Button
           type="submit"
           onClick={handleSubmit}
+          disabled={submitting || pinStatus.state === "checking"}
           className="w-full sm:w-auto transition-all duration-300 hover:shadow-lg"
         >
-          <Check className="w-4 h-4 mr-2" />
+          {submitting ? (
+            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+          ) : (
+            <Check className="w-4 h-4 mr-2" />
+          )}
           {submitLabel}
         </Button>
       </DialogFooter>

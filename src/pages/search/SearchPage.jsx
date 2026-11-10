@@ -2,9 +2,11 @@ import React, {
   useState,
   useEffect,
   useCallback,
-  useDeferredValue,
+  useMemo,
+  useRef,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -16,36 +18,16 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import ProductCard from "@/components/product-card/ProductCard";
-import { Search } from "lucide-react";
+import { Search, TriangleAlert } from "lucide-react";
 import FilterSidebar from "./filters/filter-sidebar";
 import PaginationWithPrimaryButton from "@/components/customized/pagination/pagination-02";
 import { api } from "@/utils/api";
-import { create } from "zustand";
+import { useStore } from "./useSearchStore";
 import { Preloader } from "@/components/LoaderScreen";
 import { toast } from "sonner";
 import { useTranslation } from "react-i18next";
 
-// migrating to zustand for state management
-const useStore = create((set) => ({
-  searchQuery: "",
-  selectedCategory: "all",
-  sortBy: "relevance",
-  priceRange: [0, 50000],
-  minRating: 0,
-  showOnlyInStock: false,
-  showFilters: false,
-  fixedPriceRange: [0, 50000],
-  setShowFilters: (show) => set({ showFilters: show }),
-  setSearchQuery: (query) => set({ searchQuery: query }),
-  setSelectedCategory: (category) => set({ selectedCategory: category }),
-  setSortBy: (sort) => set({ sortBy: sort }),
-  setPriceRange: (range) => set({ priceRange: range }),
-  setMinRating: (rating) => set({ minRating: rating }),
-  setShowOnlyInStock: (inStock) => set({ showOnlyInStock: inStock }),
-  setFixedPriceRange: (range) => set({ fixedPriceRange: range }),
-}));
-
-export { useStore };
+// migrating to zustand for state management (see ./useSearchStore)
 
 export default function SearchPage() {
   const { t } = useTranslation();
@@ -81,113 +63,194 @@ export default function SearchPage() {
     setShowOnlyInStock,
   } = useStore();
 
-  const deferedSearchQuery = useDeferredValue(searchQuery);
   const [preloaderEnabled, setPreloader] = useState(false);
+  const [rateLimited, setRateLimited] = useState(false);
+  /* Bumped on every explicit search (Enter / button / retry) so the
+   * fetch effect re-runs even when the committed query is unchanged. */
+  const [searchNonce, setSearchNonce] = useState(0);
+  const requestSeq = useRef(0);
 
   const [filteredAndSortedProducts, setFilteredAndSortedProducts] = useState(
     [],
   );
 
-  const searchProducts = () => {
-    if (deferedSearchQuery && deferedSearchQuery !== searchParams.get("q")) {
-      searchParams.set("q", deferedSearchQuery);
+  // URL is the source of truth for q/category/page.
+  const queryParam = searchParams.get("q") ?? "";
+  const pageParam = Math.max(
+    parseInt(searchParams.get("page") || "1", 10) || 1,
+    1,
+  );
+  const categoryParam = searchParams.get("category") ?? "all";
+
+  const sortMapping = useMemo(() => {
+    switch (sortBy) {
+      case "price-low":
+        return { sortBy: "price", sortOrder: "asc" };
+      case "price-high":
+        return { sortBy: "price", sortOrder: "desc" };
+      case "rating":
+        return { sortBy: "rating", sortOrder: "desc" };
+      case "name":
+        return { sortBy: "title", sortOrder: "desc" };
+      case "newest":
+        return { sortBy: "createdAt", sortOrder: "desc" };
+      default:
+        return { sortBy: "createdAt", sortOrder: undefined };
     }
-    setPreloader(true);
+  }, [sortBy]);
 
-    let timeout = setTimeout(() => {
-      setSearchParams(searchParams);
-
-      api.client
-        .get("/api/products", {
-          search: deferedSearchQuery,
-          params: {
-            search: deferedSearchQuery,
-            category: selectedCategory !== "all" ? selectedCategory : undefined,
-            priceMin: priceRange[0],
-            priceMax: priceRange[1],
-            ratingMin: minRating,
-            inStock: showOnlyInStock,
-            sortBy:
-              sortBy === "relevance"
-                ? "createdAt"
-                : sortBy === "name"
-                  ? "title"
-                  : sortBy === "newest"
-                    ? "createdAt"
-                    : sortBy === "price-low"
-                      ? "price"
-                      : sortBy === "price-high"
-                        ? "price"
-                        : sortBy === "rating"
-                          ? "rating"
-                          : undefined,
-            sortOrder:
-              sortBy === "price-low"
-                ? "asc"
-                : sortBy === "price-high"
-                  ? "desc"
-                  : sortBy === "rating"
-                    ? "desc"
-                    : sortBy === "name"
-                      ? "desc"
-                      : sortBy === "newest"
-                        ? "desc"
-                        : undefined,
-            page: searchParams.get("page") || 1,
-          },
-        })
-        .then((response) => {
-          const fetched = response.data;
-          setPreloader(false);
-          setTotalPages(fetched.totalPages || 1);
-          setTotalProducts(fetched.count || 0);
-          setFilteredAndSortedProducts(fetched.products || []);
-        })
-        .catch((error) => {
-          console.error("Error fetching products:", error);
-          setPreloader(false);
-          toast.error(t("search.failedToLoad"));
-          setTotalPages(1);
-          setTotalProducts(0);
-          setFilteredAndSortedProducts([]);
-        });
-    }, 1000);
-
-    return () => clearTimeout(timeout);
-  };
-
+  // URL -> store sync (guarded: only set on real change, no loops).
   useEffect(() => {
-    searchProducts();
+    if (queryParam !== searchQuery) setSearchQuery(queryParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [queryParam]);
+  useEffect(() => {
+    if (categoryParam !== selectedCategory) setSelectedCategory(categoryParam);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryParam]);
+
+  // Ensure a page param exists exactly once (no repeated sets).
+  useEffect(() => {
+    if (!searchParams.get("page")) {
+      setSearchParams(
+        (prev) => {
+          const next = new URLSearchParams(prev);
+          next.set("page", "1");
+          return next;
+        },
+        { replace: true },
+      );
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  /* Typing deliberately does NOT search: the input only updates the
+   * local store value. A search is committed to the URL (the fetch
+   * source of truth) only on Enter or the search button — see
+   * `runSearchNow`. This avoids firing a request on every keystroke. */
+
+  // Filter changes restart at page 1 (single navigation, no loop).
+  const priceMin = priceRange[0];
+  const priceMax = priceRange[1];
+  useEffect(() => {
+    if (pageParam !== 1) {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("page", "1");
+        next.set(
+          "category",
+          selectedCategory !== "all" ? selectedCategory : "",
+        );
+        return next;
+      });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedCategory,
-    priceRange,
+    sortBy,
+    priceMin,
+    priceMax,
     minRating,
     showOnlyInStock,
-    sortBy,
-    searchParams,
   ]);
 
-  const handlePageChange = (page) => {
-    searchParams.set("page", page);
-    setSearchParams(searchParams);
-  };
+  /* Commit the typed query to the URL and force a fetch. Only called on
+   * Enter, the search button, or an explicit retry — never per keystroke. */
+  const runSearchNow = useCallback(() => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (searchQuery.trim()) next.set("q", searchQuery.trim());
+      else next.delete("q");
+      next.set("category", selectedCategory !== "all" ? selectedCategory : "");
+      next.set("page", "1");
+      return next;
+    });
+    setSearchNonce((n) => n + 1);
+  }, [searchQuery, setSearchParams]);
 
-  // Initialize search query and category from URL parameters
+  // Single fetch effect on PRIMITIVE keys, with cancellation and
+  // stale-response guards. 429 shows a notice — never a retry loop.
   useEffect(() => {
-    const queryFromUrl = searchParams.get("q") || "";
-    const categoryFromUrl = searchParams.get("category");
-    let category = categoryFromUrl ? categoryFromUrl : "all";
-
-    if (!searchParams.get("page")) {
-      searchParams.set("page", "1");
-      setSearchParams(searchParams);
+    const q = queryParam.trim();
+    if (q && q.length < 2) {
+      setFilteredAndSortedProducts([]);
+      setTotalProducts(0);
+      setTotalPages(1);
+      setPreloader(false);
+      return undefined;
     }
+    const seq = (requestSeq.current += 1);
+    const controller = new AbortController();
+    setPreloader(true);
+    setRateLimited(false);
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api.client.get("/api/products", {
+          signal: controller.signal,
+          params: {
+            search: q || undefined,
+            category: selectedCategory !== "all" ? selectedCategory : undefined,
+            priceMin,
+            priceMax,
+            // Send rating bounds only when the user filters by rating;
+            // unrated products must stay visible otherwise.
+            ratingMin: minRating > 0 ? minRating : undefined,
+            inStock: showOnlyInStock || undefined,
+            sortBy: sortMapping.sortBy,
+            sortOrder: sortMapping.sortOrder,
+            page: pageParam,
+          },
+        });
+        if (requestSeq.current !== seq) return; // stale
+        const fetched = response.data;
+        setPreloader(false);
+        setTotalPages(fetched.totalPages || 1);
+        setTotalProducts(fetched.count || 0);
+        setFilteredAndSortedProducts(fetched.products || []);
+      } catch (error) {
+        if (controller.signal.aborted || requestSeq.current !== seq) return;
+        setPreloader(false);
+        if (error?.response?.status === 429) {
+          setRateLimited(true);
+          return;
+        }
+        if (error?.code === "ERR_CANCELED") return;
+        console.error("Error fetching products:", error);
+        toast.error(t("search.failedToLoad"));
+        setTotalPages(1);
+        setTotalProducts(0);
+        setFilteredAndSortedProducts([]);
+      }
+    }, 350);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    queryParam,
+    selectedCategory,
+    pageParam,
+    sortMapping,
+    priceMin,
+    priceMax,
+    minRating,
+    showOnlyInStock,
+    searchNonce,
+  ]);
 
-    setSearchQuery(queryFromUrl);
-    setSelectedCategory(category);
-  }, [searchParams]);
+  const handlePageChange = useCallback(
+    (page) => {
+      setSearchParams((prev) => {
+        const next = new URLSearchParams(prev);
+        next.set("page", String(page));
+        return next;
+      });
+    },
+    [setSearchParams],
+  );
 
-  useEffect(() => {
+  useStrictEffect(() => {
     // load categories from API
     api.client.get("/api/categories?limit=100").then((response) => {
       const fetchedCategories = response.data;
@@ -202,6 +265,15 @@ export default function SearchPage() {
     setPriceRange(fixedPriceRange);
     setMinRating(0);
     setShowOnlyInStock(false);
+    // The committed query/category live in the URL — clear them there too
+    // so removing the auto-search keeps "clear filters" fully working.
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete("q");
+      next.delete("category");
+      next.set("page", "1");
+      return next;
+    });
   }, [
     fixedPriceRange,
     setMinRating,
@@ -210,6 +282,7 @@ export default function SearchPage() {
     setSelectedCategory,
     setShowOnlyInStock,
     setSortBy,
+    setSearchParams,
   ]);
 
   const activeFiltersCount = [
@@ -218,8 +291,6 @@ export default function SearchPage() {
     minRating > 0,
     showOnlyInStock,
   ].filter(Boolean).length;
-
-  const currentActivePage = parseInt(searchParams.get("page") || "1", 10);
 
   return (
     <div className="min-h-screen p-3 sm:p-7 max-sm:p-4 max-sm:mt-3">
@@ -244,13 +315,18 @@ export default function SearchPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
-                  searchProducts();
+                  runSearchNow();
                 }
               }}
               className="pl-10 h-10 text-base"
             />
           </div>
-          <Button onClick={searchProducts} variant="outline" className="h-10">
+          <Button
+            onClick={runSearchNow}
+            variant="outline"
+            className="h-10"
+            aria-label={t("search.searchButton")}
+          >
             <Search />
           </Button>
         </div>
@@ -310,6 +386,18 @@ export default function SearchPage() {
             </div>
 
             {/* Products Grid */}
+            {rateLimited && (
+              <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-sm text-amber-700 dark:text-amber-400">
+                <TriangleAlert className="h-4 w-4 shrink-0" />
+                <span className="flex-1">
+                  Search is rate-limited right now. Wait a moment, then retry —
+                  results below are the last successful ones.
+                </span>
+                <Button size="sm" variant="outline" onClick={runSearchNow}>
+                  Retry
+                </Button>
+              </div>
+            )}
             {preloaderEnabled ? (
               <div className="w-full h-1/2 flex justify-center items-center">
                 <Preloader />
@@ -340,7 +428,7 @@ export default function SearchPage() {
                   {t("search.clearAllFilters")}
                 </Button>
                 <Button
-                  onClick={searchProducts}
+                  onClick={runSearchNow}
                   variant="outline"
                   className="ml-2"
                 >
@@ -354,9 +442,9 @@ export default function SearchPage() {
         <div className="mt-6 sm:p-1">
           <PaginationWithPrimaryButton
             className="w-full"
-            currentPage={searchParams}
+            page={pageParam}
             totalPages={totalPages}
-            onPageChange={(pageNum) => handlePageChange(pageNum)}
+            onPageChange={handlePageChange}
           />
         </div>
       </div>

@@ -8,15 +8,19 @@ import {
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Plus, Trash2 } from "lucide-react"
+import ArrayImportDialog from "@/pages/Admin/products/components/array-import-dialog"
 
-export default function FeaturesSection({ features, updateFeature, removeFeature, addFeature }) {
+export default function FeaturesSection({ features, updateFeature, removeFeature, addFeature, onImport }) {
     return (
         <Card>
-            <CardHeader>
-                <CardTitle>Features</CardTitle>
-                <CardDescription>
-                    Add product features/highlights
-                </CardDescription>
+            <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                <div className="space-y-1.5">
+                    <CardTitle>Features</CardTitle>
+                    <CardDescription>
+                        Add product features/highlights
+                    </CardDescription>
+                </div>
+                {onImport && <ArrayImportDialog kind="features" onImport={onImport} />}
             </CardHeader>
             <CardContent className="space-y-4">
                 {features.map((feature, index) => (

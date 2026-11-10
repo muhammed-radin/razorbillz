@@ -9,7 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { DynamicIcon, dynamicIconImports } from "lucide-react/dynamic";
+import { AppIcon, ICON_REGISTRY, ICON_SEARCH_DATA } from "@/lib/icons";
 import {
   Tooltip,
   TooltipContent,
@@ -17,59 +17,20 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Skeleton } from "@/components/ui/skeleton";
 import Fuse from "fuse.js";
 import { useDebounceValue } from "usehooks-ts";
-import { ScrollArea } from "@/components/ui/scroll-area";
 
+const COLS = 5;
+const ICON_CELL = 40;
+const CATEGORY_ROW = 25;
+
+/* Icon metadata lives in the curated registry (src/lib/icons.jsx) so the
+ * picker never pulls in lucide's full dynamic icon map — that map turned every
+ * icon into its own network request and stalled first paint. */
 const IconRenderer = React.memo(({ name }) => {
   return <Icon name={name} />;
 });
 IconRenderer.displayName = "IconRenderer";
-
-const IconsColumnSkeleton = () => {
-  return (
-    <div className="flex flex-col gap-2 w-full">
-      <Skeleton className="h-4 w-1/2 rounded-md" />
-      <div className="grid grid-cols-5 gap-2 w-full">
-        {Array.from({ length: 40 }).map((_, i) => (
-          <Skeleton key={i} className="h-10 w-10 rounded-md" />
-        ))}
-      </div>
-    </div>
-  );
-};
-
-const useIconsData = () => {
-  const [icons, setIcons] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadIcons = async () => {
-      setIsLoading(true);
-
-      const { iconsData } = await import("./icons-data");
-      if (isMounted) {
-        setIcons(
-          iconsData.filter((icon) => {
-            return icon.name in dynamicIconImports;
-          }),
-        );
-        setIsLoading(false);
-      }
-    };
-
-    loadIcons();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  return { icons, isLoading };
-};
 
 const IconPicker = React.forwardRef(
   (
@@ -95,11 +56,11 @@ const IconPicker = React.forwardRef(
     const [selectedIcon, setSelectedIcon] = useState(defaultValue);
     const [isOpen, setIsOpen] = useState(defaultOpen || false);
     const [search, setSearch] = useDebounceValue("", 100);
-    const [isPopoverVisible, setIsPopoverVisible] = useState(false);
-    const { icons } = useIconsData();
-    const [isLoading, setIsLoading] = useState(true);
 
-    const iconsToUse = useMemo(() => iconsList || icons, [iconsList, icons]);
+    const iconsToUse = useMemo(
+      () => iconsList || ICON_SEARCH_DATA,
+      [iconsList],
+    );
 
     const fuseInstance = useMemo(() => {
       return new Fuse(iconsToUse, {
@@ -127,20 +88,16 @@ const IconPicker = React.forwardRef(
       const categories = new Map();
 
       filteredIcons.forEach((icon) => {
-        if (icon.categories && icon.categories.length > 0) {
-          icon.categories.forEach((category) => {
-            if (!categories.has(category)) {
-              categories.set(category, []);
-            }
-            categories.get(category).push(icon);
-          });
-        } else {
-          const category = "Other";
+        const list =
+          icon.categories && icon.categories.length > 0
+            ? icon.categories
+            : ["Other"];
+        list.forEach((category) => {
           if (!categories.has(category)) {
             categories.set(category, []);
           }
           categories.get(category).push(icon);
-        }
+        });
       });
 
       return Array.from(categories.entries())
@@ -154,19 +111,13 @@ const IconPicker = React.forwardRef(
       categorizedIcons.forEach((category, categoryIndex) => {
         items.push({ type: "category", categoryIndex });
 
-        const rows = [];
-        for (let i = 0; i < category.icons.length; i += 5) {
-          rows.push(category.icons.slice(i, i + 5));
-        }
-
-        rows.forEach((rowIcons, rowIndex) => {
+        for (let i = 0; i < category.icons.length; i += COLS) {
           items.push({
             type: "row",
             categoryIndex,
-            rowIndex,
-            icons: rowIcons,
+            icons: category.icons.slice(i, i + COLS),
           });
-        });
+        }
       });
 
       return items;
@@ -190,11 +141,24 @@ const IconPicker = React.forwardRef(
       count: virtualItems.length,
       getScrollElement: () => parentRef.current,
       estimateSize: (index) =>
-        virtualItems[index].type === "category" ? 25 : 40,
+        virtualItems[index]?.type === "category" ? CATEGORY_ROW : ICON_CELL,
       paddingEnd: 2,
       gap: 10,
       overscan: 5,
     });
+
+    // Popover content is mounted while hidden, so the virtualizer can measure
+    // a zero-height container on the first open. Re-measure after it becomes
+    // visible so the initial icon list is populated.
+    useEffect(() => {
+      if (!(open ?? isOpen)) return undefined;
+
+      const frame = requestAnimationFrame(() => {
+        virtualizer.measure();
+      });
+
+      return () => cancelAnimationFrame(frame);
+    }, [open, isOpen, virtualItems.length, virtualizer]);
 
     const handleValueChange = useCallback(
       (icon) => {
@@ -213,17 +177,8 @@ const IconPicker = React.forwardRef(
           setIsOpen(newOpen);
         }
         onOpenChange?.(newOpen);
-
-        setIsPopoverVisible(newOpen);
-
-        if (newOpen) {
-          setTimeout(() => {
-            virtualizer.measure();
-            setIsLoading(false);
-          }, 1);
-        }
       },
-      [open, onOpenChange, virtualizer],
+      [open, onOpenChange, setSearch],
     );
 
     const handleIconClick = useCallback(
@@ -232,7 +187,7 @@ const IconPicker = React.forwardRef(
         setIsOpen(false);
         setSearch("");
       },
-      [handleValueChange],
+      [handleValueChange, setSearch],
     );
 
     const handleSearchChange = useCallback(
@@ -245,7 +200,7 @@ const IconPicker = React.forwardRef(
 
         virtualizer.scrollToOffset(0);
       },
-      [virtualizer],
+      [virtualizer, setSearch],
     );
 
     const scrollToCategory = useCallback(
@@ -286,6 +241,8 @@ const IconPicker = React.forwardRef(
         <TooltipProvider key={icon.name}>
           <Tooltip>
             <TooltipTrigger
+              type="button"
+              aria-label={icon.name}
               className={cn(
                 "p-2 rounded-md border hover:bg-foreground/10 transition",
                 "flex items-center justify-center",
@@ -302,92 +259,6 @@ const IconPicker = React.forwardRef(
       ),
       [handleIconClick],
     );
-
-    const renderVirtualContent = useCallback(() => {
-      if (filteredIcons.length === 0) {
-        return <div className="text-center text-gray-500">No icon found</div>;
-      }
-
-      return (
-        <div
-          className="relative w-full overscroll-contain max-h-30"
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-          }}
-        >
-          {virtualizer.getVirtualItems().map((virtualItem) => {
-            const item = virtualItems[virtualItem.index];
-
-            if (!item) return null;
-
-            const itemStyle = {
-              position: "absolute",
-              top: 0,
-              left: 0,
-              width: "100%",
-              height: `${virtualItem.size}px`,
-              transform: `translateY(${virtualItem.start}px)`,
-            };
-
-            if (item.type === "category") {
-              return (
-                <div
-                  key={virtualItem.key}
-                  style={itemStyle}
-                  className="top-0 bg-secondary z-10"
-                >
-                  <h3 className="font-medium text-sm capitalize">
-                    {categorizedIcons[item.categoryIndex].name}
-                  </h3>
-                  <div className="h-[1px] bg-foreground/10 w-full" />
-                </div>
-              );
-            }
-
-            return (
-              <div
-                key={virtualItem.key}
-                data-index={virtualItem.index}
-                style={itemStyle}
-              >
-                <div className="grid grid-cols-5 gap-2 w-full">
-                  {item.icons.map(renderIcon)}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }, [
-      virtualizer,
-      virtualItems,
-      categorizedIcons,
-      filteredIcons,
-      renderIcon,
-    ]);
-
-    React.useEffect(() => {
-      if (isPopoverVisible) {
-        setIsLoading(true);
-        const timer = setTimeout(() => {
-          setIsLoading(false);
-          virtualizer.measure();
-        }, 10);
-
-        const resizeObserver = new ResizeObserver(() => {
-          virtualizer.measure();
-        });
-
-        if (parentRef.current) {
-          resizeObserver.observe(parentRef.current);
-        }
-
-        return () => {
-          clearTimeout(timer);
-          resizeObserver.disconnect();
-        };
-      }
-    }, [isPopoverVisible, virtualizer]);
 
     return (
       <Popover
@@ -428,7 +299,58 @@ const IconPicker = React.forwardRef(
             className="max-h-60 overflow-auto"
             style={{ scrollbarWidth: "thin" }}
           >
-            {isLoading ? <IconsColumnSkeleton /> : renderVirtualContent()}
+            {filteredIcons.length === 0 || virtualItems.length === 0 ? (
+              <div className="text-center text-gray-500 py-4">
+                No icon found
+              </div>
+            ) : (
+              <div
+                className="relative w-full overscroll-contain"
+                style={{ height: `${virtualizer.getTotalSize()}px` }}
+              >
+                {virtualizer.getVirtualItems().map((virtualItem) => {
+                  const item = virtualItems[virtualItem.index];
+
+                  if (!item) return null;
+
+                  const itemStyle = {
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    height: `${virtualItem.size}px`,
+                    transform: `translateY(${virtualItem.start}px)`,
+                  };
+
+                  if (item.type === "category") {
+                    return (
+                      <div
+                        key={virtualItem.key}
+                        style={itemStyle}
+                        className="top-0 bg-secondary z-10"
+                      >
+                        <h3 className="font-medium text-sm capitalize">
+                          {categorizedIcons[item.categoryIndex].name}
+                        </h3>
+                        <div className="h-[1px] bg-foreground/10 w-full" />
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div
+                      key={virtualItem.key}
+                      data-index={virtualItem.index}
+                      style={itemStyle}
+                    >
+                      <div className="grid grid-cols-5 gap-2 w-full">
+                        {item.icons.map(renderIcon)}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </PopoverContent>
       </Popover>
@@ -438,7 +360,11 @@ const IconPicker = React.forwardRef(
 IconPicker.displayName = "IconPicker";
 
 const Icon = React.forwardRef(({ name, ...props }, ref) => {
-  return <DynamicIcon name={name} {...props} ref={ref} />;
+  const Component = ICON_REGISTRY[name] || AppIcon;
+  if (Component === AppIcon) {
+    return <AppIcon name={name} ref={ref} {...props} />;
+  }
+  return <Component ref={ref} {...props} />;
 });
 Icon.displayName = "Icon";
 

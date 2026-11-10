@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Card, CardContent } from "@/components/ui/card";
 import { Reveal, SectionHeading } from "./Reveal";
 
-export default function WhyRazorbills() {
+export default function WhyRazorbillz() {
   const { t } = useTranslation();
   const features = [
     {

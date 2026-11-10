@@ -21,17 +21,11 @@ import { decrypt } from "@/utils/crypt";
 import React, { useMemo, useCallback } from "react";
 import { useTranslation } from "react-i18next";
 
-const AvatarMenu = ({ name, img, user, decrypted, isAnonymous }) => {
+const AvatarMenu = ({ name, img, user, isAnonymous }) => {
   const { t } = useTranslation();
 
   const decryptedUserName = useMemo(() => {
-    if (decrypted == false) return user.name;
-    try {
-      return decrypt(user.name) ? decrypt(user.name) : user.name; // fallback to original name if decryption fails
-    } catch (e) {
-      console.error("Failed to decrypt user name:", e);
-      return user.name;
-    }
+    return decrypt(name);
   }, [user.name]);
 
   const handleLogout = useCallback(() => {
@@ -65,11 +59,11 @@ const AvatarMenu = ({ name, img, user, decrypted, isAnonymous }) => {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center gap-3">
-        <AvatarIcon name={name} img={img} decrypted={decrypted} />
+        <AvatarIcon name={name} img={img} />
       </DropdownMenuTrigger>
       <DropdownMenuContent className="mt-2 w-72">
         <DropdownMenuItem className="py-3">
-          <AvatarIcon name={name} img={img} decrypted={decrypted} />
+          <AvatarIcon name={name} img={img} />
           <div className="ml-1 flex flex-col">
             <p className="text-sm font-medium">{decryptedUserName}</p>
             <p className="text-xs text-muted-foreground">{user.email}</p>

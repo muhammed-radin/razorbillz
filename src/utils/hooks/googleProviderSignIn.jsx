@@ -1,8 +1,8 @@
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { clickToGProvider } from "../auth";
 import { encrypt } from "../crypt";
-import { generateHashLink } from "../route-util";
+import { generateHashLink } from "@shared/utils/route-util";
+import { api } from "../api";
 
 export default function onUserGoogleSignIn(setIsInputDisabled) {
   function navigate(path) {
@@ -19,64 +19,33 @@ export default function onUserGoogleSignIn(setIsInputDisabled) {
     () =>
       new Promise((resolveui, rejectui) => {
         try {
-          clickToGProvider()
-            .then(({ user, credential }) => {
-              // extract uid, displayName, photoURL, email,  from user
-              const {
-                uid,
-                displayName,
-                photoURL,
-                email,
-                accessToken,
-                emailVerified,
-                idToken,
-              } = user;
-              // You can now use the user info and token as needed
-              // uid encrypted for getting uniqe user id
-              let encryptedData = {
-                id: encrypt(uid),
-                name: encrypt(displayName),
-                avatar: encrypt(photoURL),
-                email: email,
+          authClient.signIn
+            .social(
+              {
                 provider: "google",
-                emailVerified,
-              };
-
-              authClient.signIn
-                .social({
-                  provider: "google",
-                  idToken: {
-                    token: credential.idToken,
-                    accessToken: credential.accessToken,
-                  },
-                  callbackURL: generateHashLink("/"),
-                  additionalData: encryptedData,
-                  scopes: ["profile", "email", "openid"],
-                })
-                .then((response) => {
-                  if (
-                    response.data &&
-                    response.data.user &&
-                    response.data.token
-                  ) {
-                    resolveui("Google Sign-In successful");
-                    sessionStorage.removeItem("session"); // Clear any existing session data
-                    navigate("/");
-                  } else {
-                    rejectui("Google Sign-In failed");
-                  }
-                })
-                .catch((error) => {
-                  console.error("Google Sign-In error:", error);
+                callbackURL: generateHashLink("/?auth=google&success=true"),
+                errorCallbackURL: generateHashLink(
+                  "/login?auth=google&success=false",
+                ),
+                scopes: ["profile", "email", "openid"],
+              },
+              {
+                onError: (ctx) => {
+                  const error = ctx.error || ctx;
+                  const errorMessage = error.message || error.statusText;
                   rejectui(
-                    `${error.errorMessage || error.message || error.response?.data?.message || "Unknown error"}`,
+                    `${errorMessage || ctx.response?.statusText || "Unknown error"}`,
                   );
-                });
+                },
+              },
+            )
+            .then((response) => {
+              api.clearSessionCache(); // clear session cache to ensure fresh session data
             })
-            .catch((err) => {
-              console.warn("Google Sign-In error:", err);
+            .catch((error) => {
+              console.error("Google Sign-In error:", error);
               rejectui(
-                `${err.errorMessage || err.message || err.response?.data?.message || "Unknown error"}`,
+                `${error.errorMessage || error.message || error.response?.data?.message || "Unknown error"}`,
               );
             });
         } catch (error) {

@@ -4,7 +4,13 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { admin, anonymous } from "better-auth/plugins";
 import { UserModel } from "../models/schema/user.js";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { decryptStrict } from "./crypt.js";
+import {
+  decrypt,
+  decryptStrict,
+  decryptField,
+  encrypt,
+  isEncrypted,
+} from "./crypto/index.js";
 import mongoose, { Mongoose } from "mongoose";
 import {
   ErrorEvent,
@@ -13,9 +19,45 @@ import {
   SessionEvent,
   UserEvent,
 } from "./events.manage.js";
-import { id } from "zod/v4/locales";
+import {
+  applyBasicBetterAuthDataToUser,
+  generateBasicBetterAuthData,
+  migrateOldUserToNewUser,
+} from "./auth.migrate.js";
+import { ac, ecommerceRoles } from "./permissions.js";
+import sendEmail from "./mailer.js";
+import storeConfig from "../shared/store.config.js";
+import { stripServerOwnedFields } from "./schemaMapper.js";
+import { db } from "./db.js";
+import {
+  buildMirrorUserFields,
+  emailVaultAdapter,
+} from "./crypto/emailVault.js";
 
 let authInstance = null;
+
+/* Session records do not always embed the user, so resolve the guest
+ * flag once per session lifecycle event. Guests must never be counted
+ * as logged-in users or get a lastLogin timestamp. */
+async function resolveSessionGuest(sessionData) {
+  if (sessionData?.user?.isAnonymous || sessionData?.isAnonymous) return true;
+
+  const userId = sessionData?.userId || sessionData?.user?.id;
+  if (!userId) return false;
+
+  try {
+    // Better Auth stores the authoritative user record (including
+    // isAnonymous) in its own validation collection. Guest users are
+    // intentionally absent from the app "users" collection, so querying
+    // UserModel alone always reports them as logged-in.
+    const record = await db.db
+      .collection("users_validation")
+      .findOne({ $or: [{ _id: userId }, { id: userId }] });
+    return Boolean(record?.isAnonymous);
+  } catch {
+    return false;
+  }
+}
 
 export default function createAuth(db) {
   if (authInstance) {
@@ -23,9 +65,16 @@ export default function createAuth(db) {
   }
 
   authInstance = betterAuth({
-    database: mongodbAdapter(
+    /* Email vaulting adapter: `users_validation.email` and
+     * `verification.identifier` are sealed at rest (envelope AES-GCM)
+     * and equality/prefix/substring searches translate to blind-index
+     * tokens (see utils/crypto/emailVault.js). Sign-in, verification
+     * links and password resets keep working on ciphertext. */
+    database: emailVaultAdapter(
       // Extract the raw MongoClient from your Mongoose connection pool
-      db,
+      mongodbAdapter(
+        db,
+      ),
     ),
     onAPIError: {
       onError: async (error, context) => {
@@ -43,6 +92,14 @@ export default function createAuth(db) {
     databaseHooks: {
       user: {
         create: {
+          before: async (userData, context) => {
+            return {
+              data: {
+                ...userData,
+                ...generateBasicBetterAuthData(userData, null, true),
+              },
+            };
+          },
           after: async (userData, context) => {
             const resolvedUserId = userData.id || userData._id?.toString();
 
@@ -55,16 +112,33 @@ export default function createAuth(db) {
               id: resolvedUserId,
             };
 
-            const createdUser = await UserModel.create({
-              id: resolvedUserId,
-              email: userData.email,
-              emailVerified: userData.emailVerified,
-              name: userData.name,
-              image: userData.image,
-              role: "user",
-              adminPermissions: [],
-              isActive: true,
-            });
+            // Create a new user in the UserModel if the user is not anonymous,
+            // guest to permanent user migration will be handled in the onLinkAccount hook of the anonymous plugin
+            if (userData?.isAnonymous === false) {
+              const createdUser = await UserModel.create({
+                id: resolvedUserId,
+                email: userData.email,
+                emailVerified: userData.emailVerified,
+                name: userData.name,
+                image: userData.image,
+                role: "user",
+                isActive: true,
+                providedBy: userData.providedBy || "local",
+                preservedOldUserId: userData.preservedOldUserId || null,
+                /* Sealed email + blind-index tokens (email vaulting) */
+                ...buildMirrorUserFields(userData),
+              });
+
+              await applyBasicBetterAuthDataToUser(
+                resolvedUserId,
+                generateBasicBetterAuthData(
+                  normalizedUserData,
+                  userData.preservedOldUserId || null,
+                ),
+                false,
+                true, // Exclude our collections during this update, becuase we are already creating the user in our collections above
+              );
+            }
 
             // Trigger event after user creation
             evt.fire(
@@ -77,7 +151,7 @@ export default function createAuth(db) {
               }),
             );
 
-            return { data: userData };
+            return { data: { ...userData } };
           },
         },
         delete: {
@@ -96,7 +170,28 @@ export default function createAuth(db) {
         },
         update: {
           after: async (userData, context) => {
-            await UserModel.updateOne({ id: userData.id }, userData);
+            /* Mirror stays queryable on ciphertext: vaulted values +
+             * blind-index tokens are built from the (possibly sealed)
+             * Better Auth row (email vaulting). */
+            const mirrorFields = buildMirrorUserFields(userData);
+            const safeFields = stripServerOwnedFields(userData);
+            // Vault-owned keys must not be copied verbatim from the
+            // Better Auth row (their tokens differ per collection).
+            for (const key of [
+              "email", "email_idx", "email_prefix", "email_grams",
+              "name", "name_idx", "name_prefix", "name_grams",
+              "phoneNumber", "phone_idx", "phone_prefix", "phone_grams",
+              "image", "profilePicture",
+            ]) {
+              delete safeFields[key];
+            }
+            const updates = { ...safeFields, ...mirrorFields };
+            if (Object.keys(updates).length > 0) {
+              await UserModel.updateOne(
+                { id: userData.id },
+                { $set: updates },
+              );
+            }
             evt.fire(
               Evts.USER_PROFILE_UPDATED,
               new UserEvent({
@@ -112,11 +207,13 @@ export default function createAuth(db) {
       session: {
         create: {
           after: async (sessionData, context) => {
+            const isGuest = await resolveSessionGuest(sessionData);
             evt.fire(
               Evts.USER_LOGGED_IN,
               new SessionEvent({
                 type: Evts.USER_LOGGED_IN,
                 session: sessionData,
+                isGuest,
               }),
             );
             evt.fire(
@@ -124,6 +221,7 @@ export default function createAuth(db) {
               new SessionEvent({
                 type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest,
               }),
             );
           },
@@ -141,11 +239,15 @@ export default function createAuth(db) {
         },
         update: {
           after: async (sessionData, context) => {
+            // Session updates are refreshes/expiry bumps, not fresh
+            // logins: only record a site view so login analytics and
+            // lastLogin stay accurate.
             evt.fire(
-              Evts.USER_LOGGED_IN,
+              Evts.SITE_VIEWED,
               new SessionEvent({
-                type: Evts.USER_LOGGED_IN,
+                type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest: await resolveSessionGuest(sessionData),
               }),
             );
           },
@@ -158,7 +260,10 @@ export default function createAuth(db) {
         if (ctx.path === "/sign-in/email" || ctx.path === "/sign-up/email") {
           if (ctx.body && typeof ctx.body.password === "string") {
             try {
-              // 2. Decrypt client-encrypted password back to plain text
+              // 2. Decrypt client-obfuscated password back to plain text.
+              // Supports the envelope format ("ze1.…" — Tier A) and the
+              // legacy CryptoJS format shared with the current frontend;
+              // both are obfuscation-in-transit only, real protection is TLS.
               const plainPassword = decryptStrict(ctx.body.password);
 
               // 3. Mutate request body before Better Auth validates or hashes
@@ -177,40 +282,24 @@ export default function createAuth(db) {
             }
           }
         }
-      }),
-      after: createAuthMiddleware(async (ctx) => {
-        const session = await getSessionFromCtx(ctx);
-        console.log(
-          "Session after auth action:",
-          session,
-          ctx.context?.session,
-        );
-        const isSessionFound = !!session; // TODO: Fix this session null error, currently session is null after sign-in, sign-up, and sign-out actions. Need to investigate why.
-        if (isSessionFound && ctx.path === "/sign-out") {
+
+        let session = await getSessionFromCtx(ctx);
+
+        let evtType = null;
+        if (ctx.path === "/sign-out") {
+          evtType = Evts.USER_LOGGED_OUT_REQUEST;
+        } else if (ctx.path === "/reset-password") {
+          evtType = Evts.USER_PASSWORD_CHANGED;
+        } else if (ctx.path === "/update-password") {
+          evtType = Evts.USER_PASSWORD_CHANGED;
+        }
+
+        const isSessionFound = !!session;
+        if (isSessionFound && evtType) {
           evt.fire(
-            Evts.USER_LOGGED_OUT_REQUEST,
+            evtType,
             new UserEvent({
-              type: Evts.USER_LOGGED_OUT_REQUEST,
-              user: session?.user || null,
-              isGuest: session?.user?.isAnonymous || false,
-              userId: session?.user?.id || null,
-            }),
-          );
-        } else if (isSessionFound && ctx.path === "/reset-password") {
-          evt.fire(
-            Evts.USER_PASSWORD_CHANGED,
-            new UserEvent({
-              type: Evts.USER_PASSWORD_CHANGED,
-              user: session?.user || null,
-              isGuest: session?.user?.isAnonymous || false,
-              userId: session?.user?.id || null,
-            }),
-          );
-        } else if (isSessionFound && ctx.path === "/update-password") {
-          evt.fire(
-            Evts.USER_PASSWORD_CHANGED,
-            new UserEvent({
-              type: Evts.USER_PASSWORD_CHANGED,
+              type: evtType,
               user: session?.user || null,
               isGuest: session?.user?.isAnonymous || false,
               userId: session?.user?.id || null,
@@ -218,12 +307,82 @@ export default function createAuth(db) {
           );
         }
       }),
+      after: createAuthMiddleware(async (ctx) => {
+        /* EMAIL VAULTING — Better Auth rows carry sealed values; any
+         * response that surfaces a user decrypts PII so the client
+         * never sees ciphertext. */
+        try {
+          const returned = ctx?.context?.returned;
+          const user = returned?.user ?? (returned && returned.email && returned.name ? returned : null);
+          if (user && typeof user === "object") {
+            if (typeof user.email === "string") {
+              const plain = decryptField(user.email);
+              if (typeof plain === "string" && plain && plain.includes("@")) {
+                user.email = plain;
+              }
+            }
+            if (typeof user.name === "string") {
+              const plain = decryptField(user.name);
+              if (typeof plain === "string" && plain) {
+                user.name = plain;
+              }
+            }
+            if (typeof user.image === "string" && isEncrypted(user.image)) {
+              const plain = decryptField(user.image);
+              if (typeof plain === "string" && plain) {
+                user.image = plain;
+              }
+            }
+            if (typeof user.profilePicture === "string" && isEncrypted(user.profilePicture)) {
+              const plain = decryptField(user.profilePicture);
+              if (typeof plain === "string" && plain) {
+                user.profilePicture = plain;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[auth] response PII decrypt skipped:", err?.message);
+        }
+      }),
+    },
+    emailVerification: {
+      autoSignInAfterVerification: true,
+      sendOnSignUp: false, // Disable automatic email verification on sign-up
+      sendVerificationEmail: async ({ user, url, token }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Verify your email for " + storeConfig.brand.name.en,
+          templateName: "verification.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            verificationType: "link",
+            verificationUrl: url,
+            code: "",
+            expiryMinutes: 15,
+            logoUrl: storeConfig.assets.ogLogo32,
+            name: decrypt(user.name) || decrypt(user.email).split("@")[0],
+          },
+        });
+      },
     },
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
       onExistingUserSignUp: async ({ user }, req) => {
         // Custom logic for handling existing users during sign-up
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Sign-up attempt with your email",
+          templateName: "signup-attempt.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            logoUrl: storeConfig.assets.ogLogo32,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            actionUrl: process.env.FRONTEND_URL,
+            actionLabel: "Go to " + storeConfig.brand.name.en,
+          },
+        });
         throw new APIError(
           "BAD_REQUEST",
           "User already exists. Please log-in instead.",
@@ -233,16 +392,70 @@ export default function createAuth(db) {
           400,
         );
       },
+
       minPasswordLength: 8,
+      revokeSessionsOnPasswordReset: true,
+      resetPasswordTokenExpiresIn: 15 * 60, // 15 minutes in seconds
+      sendResetPassword: async ({ user, url }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Reset your " + storeConfig.brand.name.en + " password",
+          templateName: "reset-password.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            logoUrl: storeConfig.assets.ogLogo32,
+            actionUrl: url,
+            actionLabel: "Reset password",
+            expiryMinutes: 15,
+          },
+        });
+      },
     },
     plugins: [
       anonymous({
-        emailDomainName: "guest.razorbills.app",
-        generateName: (user) => `Guest-${Math.floor(Math.random() * 100000)}`,
+        emailDomainName:
+          "guest." + storeConfig.brand.name.en.toLowerCase() + ".app",
+        generateName: () =>
+          decrypt(`Guest-${Math.floor(Math.random() * 100000)}`),
+        onLinkAccount: async ({ anonymousUser, newUser }) => {
+          // Convert createdAt to a timestamp (handle potential string/Date types)
+          const userCreatedTime = new Date(newUser.user.createdAt).getTime();
+          const now = Date.now();
+
+          // Check that the user was created within the last 20 seconds
+          const userAge = now - userCreatedTime;
+          const isNewUser =
+            Number.isFinite(userCreatedTime) && userAge >= 0 && userAge < 20000;
+
+          // Sign-Up guest means their user flow be like:
+          // USer first chooses as Guest -> Sign-Up (new user) - migrate guest data to new user
+          if (isNewUser) {
+            await migrateOldUserToNewUser(
+              anonymousUser?.user,
+              newUser?.user,
+              true,
+            );
+            // Safe to fully overwrite or set initial state
+          } else {
+            // This is Log-In guest means their user flow be like:
+            // Guest -> Log-In (existing user) - migrate guest data to existing user
+            await migrateOldUserToNewUser(
+              anonymousUser?.user,
+              newUser?.user,
+              false,
+            );
+            // Be careful not to overwrite existing user data (e.g., don't overwrite their existing cart)
+            // You might want to append items instead of replacing them
+          }
+        },
       }),
       admin({
-        adminRoles: ["admin"],
+        adminRoles: ["admin", "owner"],
         defaultRole: "user",
+        ac: ac,
+        roles: ecommerceRoles,
       }),
     ],
     account: {
@@ -259,22 +472,27 @@ export default function createAuth(db) {
 
         mapProfileToUser: async (profile) => {
           // Guarantee a non-empty name string to satisfy DB validation
-          const nameFallback =
+          const nameFallback = encrypt(
             profile.name ||
-            `${profile.given_name || ""} ${profile.family_name || ""}`.trim() ||
-            profile.email.split("@")[0];
+              `${profile.given_name || ""} ${profile.family_name || ""}`.trim() ||
+              profile.email.split("@")[0],
+          );
 
-          const profilePicture =
+          const profilePicture = encrypt(
             profile.picture ||
-            "https://api.dicebear.com/10.x/glyphs/svg?borderRadius=45&seed=" +
-              encodeURIComponent(nameFallback);
+              "https://api.dicebear.com/10.x/glyphs/svg?borderRadius=45&seed=" +
+                encodeURIComponent(nameFallback),
+          );
 
           return {
+            ...generateBasicBetterAuthData(profile, null),
             email: profile.email,
             emailVerified: profile.email_verified,
             name: nameFallback,
             image: profilePicture,
+            profilePicture, // override generateBasicBetterAuthData's null image with the profile picture from Google
             role: "user",
+            providedBy: "google",
           };
         },
       },
@@ -288,13 +506,23 @@ export default function createAuth(db) {
           required: false,
           input: true,
           returned: true,
+          fieldName: "profilePicture", // Ensure this matches the field name in your Mongoose model
         },
-        adminPermissions: {
-          type: [String],
-          default: [],
-          required: true,
+        providedBy: {
+          type: String,
+          defaultValue: "local",
+          required: false,
+          input: true,
+          returned: true,
+          fieldName: "providedBy", // Ensure this matches the field name in your Mongoose model
+        },
+        preservedOldUserId: {
+          type: String,
+          defaultValue: null,
+          required: false,
           input: false,
           returned: true,
+          fieldName: "preservedOldUserId", // Ensure this matches the field name in your Mongoose model
         },
       },
       fields: {
@@ -308,10 +536,21 @@ export default function createAuth(db) {
           return new mongoose.Types.ObjectId().toString();
         }, // Set "false" to use MongoDB's default ObjectId, or "uuid" to use UUIDs
       },
-      defaultCookieAttributes: {
-        sameSite: "none",
-        secure: true,
-      },
+      /* Secure cross-site cookies in production only. On plain-http
+       * dev origins (http://localhost) browsers drop Secure cookies,
+       * which silently breaks sessions and locks guests in an
+       * auth-modal loop. SameSite=lax + non-secure is correct for
+       * same-site http dev; production keeps strict cross-site cookies. */
+      defaultCookieAttributes:
+        process.env.NODE_ENV === "production"
+          ? {
+              sameSite: "none",
+              secure: true,
+            }
+          : {
+              sameSite: "lax",
+              secure: false,
+            },
     },
     trustedOrigins: [process.env.FRONTEND_URL],
     baseURL: process.env.BETTER_AUTH_URL,

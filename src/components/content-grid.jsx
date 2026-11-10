@@ -3,9 +3,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { currency } from "@/utils/currency";
 import {
   ArrowRight,
+  ArrowUpRight,
   Flame,
   Star,
   Clock,
@@ -127,24 +127,28 @@ const themeColors = {
     text: "text-pink-500",
     glow: "group-hover:shadow-pink-500/20",
   },
+  // default shadcn
+  default: {
+    gradient: "from-card to-muted",
+    bg: "bg-card",
+    border: "border-border",
+    text: "text-foreground",
+    glow: "group-hover:shadow-primary/10",
+  },
 };
 
-const GridCard = ({ item, index, ...params }) => {
-  const [isHovered, setIsHovered] = useState(false);
+const GridCard = ({ item, titleAs = "h3", ...params }) => {
+  /* Card titles are h3 by default (they sit inside an <h2> section on the home
+   * page); pages that render the grid straight under an <h1> pass "h2". */
+  const TitleTag = titleAs;
   const [imageLoaded, setImageLoaded] = useState(false);
-  const theme = themeColors[item.theme] || themeColors.violet;
+  const theme = themeColors[item.theme] || themeColors.default;
   const Icon = item.icon || Package;
 
   const isLarge = item.size === "large";
   const isMedium = item.size === "medium";
   const isSmall = item.size === "small";
 
-  const handleMouseEnter = useCallback(() => setIsHovered(true), []);
-  const handleMouseLeave = useCallback(() => setIsHovered(false), []);
-  const handleTouchStart = useCallback(() => {
-    setIsHovered(true);
-    setTimeout(() => setIsHovered(false), 3000);
-  }, []);
   const handleImageLoad = useCallback(() => setImageLoaded(true), []);
 
   const renderIcon = useCallback(
@@ -174,15 +178,12 @@ const GridCard = ({ item, index, ...params }) => {
         // Grid sizing
         isLarge && "col-span-2 row-span-2 min-h-[320px]",
         isMedium && "col-span-1 row-span-1 min-h-[200px]",
-        isSmall && "col-span-1 row-span-1 min-h-[160px]",
+        isSmall && "col-span-1 row-span-1 min-h-[210px] sm:min-h-[230px]",
       )}
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onTouchStart={handleTouchStart}
       {...params}
     >
-      {/* Background Image for Large/Medium Cards */}
-      {item.image && (isLarge || isMedium) && (
+      {/* Background Image */}
+      {item.image && (
         <>
           {!imageLoaded && (
             <div className="absolute inset-0 bg-muted animate-pulse" />
@@ -200,15 +201,23 @@ const GridCard = ({ item, index, ...params }) => {
             )}
             onLoad={handleImageLoad}
           />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/50 to-black/20" />
+          <div
+            className={cn(
+              "absolute inset-0",
+              isSmall
+                ? "bg-gradient-to-t from-black/90 via-black/45 to-black/10"
+                : "bg-gradient-to-t from-black/90 via-black/50 to-black/20",
+            )}
+          />
         </>
       )}
 
       {/* Icon Background for Small Cards */}
-      {isSmall && (
+      {isSmall && !item.image && (
         <div
           className={cn(
-            "absolute -right-8 -bottom-8 opacity-10 group-hover:opacity-20 transition-opacity duration-500",
+            "absolute -right-8 -bottom-8 opacity-10 group-hover:opacity-20",
+            "transition-opacity duration-500",
           )}
         >
           {renderIcon("size-40")}
@@ -219,7 +228,7 @@ const GridCard = ({ item, index, ...params }) => {
       <CardContent
         className={cn(
           "relative z-10 h-full flex flex-col justify-end p-5",
-          isSmall && "justify-center items-center text-center",
+          isSmall && "items-start",
         )}
       >
         {/* Badge */}
@@ -239,35 +248,43 @@ const GridCard = ({ item, index, ...params }) => {
         {isSmall && (
           <div
             className={cn(
-              "w-14 h-14 rounded-2xl flex items-center justify-center mb-3",
-              "bg-gradient-to-br shadow-lg",
+              "size-12 rounded-2xl flex items-center justify-center mb-4",
+              "bg-gradient-to-br shadow-lg transition-transform duration-300",
+              "group-hover:scale-110 group-hover:-rotate-3",
               theme.gradient,
+              "border border-white/20",
             )}
           >
-            {renderIcon("size-7 text-white")}
+            {renderIcon("size-6 " + theme.text)}
           </div>
         )}
 
         {/* Title & Subtitle */}
-        <div className={cn(isSmall && "text-center")}>
-          <h3
+        <div className="w-full">
+          <TitleTag
             className={cn(
               "font-bold mb-1 transition-colors duration-300",
               isLarge ? "text-2xl sm:text-3xl text-white" : "",
               isMedium ? "text-xl text-white" : "",
-              isSmall ? "text-base" : "",
-              "max-md:text-sm",
+              isSmall ? "text-lg sm:text-xl" : "",
+              isSmall && item.image && "text-white",
+              !isSmall && "max-md:text-sm",
             )}
           >
             {item.title}
-          </h3>
+          </TitleTag>
           <p
             className={cn(
               "font-medium mb-2",
               isLarge ? "text-lg text-gray-200" : "",
               isMedium ? "text-sm text-gray-300" : "",
-              isSmall ? "text-sm text-muted-foreground" : "",
-              "max-md:text-xs",
+              isSmall
+                ? item.image
+                  ? "text-sm text-white/75"
+                  : "text-sm text-muted-foreground"
+                : "",
+              !isSmall && "max-md:text-xs",
+              isSmall && "line-clamp-2",
             )}
           >
             {item.subtitle}
@@ -278,6 +295,21 @@ const GridCard = ({ item, index, ...params }) => {
             </p>
           )}
         </div>
+
+        {isSmall && (
+          <div
+            className={cn(
+              "mt-3 inline-flex items-center gap-1.5 text-xs font-semibold",
+              item.image
+                ? "text-white/75 group-hover:text-white"
+                : "text-muted-foreground group-hover:text-foreground",
+              "transition-colors",
+            )}
+          >
+            Explore collection
+            <ArrowRight className="size-3.5 transition-transform group-hover:translate-x-1" />
+          </div>
+        )}
 
         {/* CTA for Large Cards */}
         {isLarge && (
@@ -294,6 +326,21 @@ const GridCard = ({ item, index, ...params }) => {
           </Button>
         )}
       </CardContent>
+
+      {isSmall && (
+        <div
+          className={cn(
+            "absolute top-4 right-4 grid size-9 place-items-center rounded-full",
+            "border transition-all duration-300",
+            item.image
+              ? "border-white/25 bg-black/20 text-white"
+              : "border-border bg-background/80 text-foreground",
+            "opacity-0 translate-y-1 group-hover:opacity-100 group-hover:translate-y-0",
+          )}
+        >
+          <ArrowUpRight className="size-4" />
+        </div>
+      )}
 
       {/* Hover Glow Effect */}
       <div
@@ -402,8 +449,8 @@ export default memo(function ContentGrid({
 
         {/* Grid Layout */}
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 auto-rows-auto">
-          {displayItems.map((item, index) => (
-            <GridCardMemo key={item.id} item={item} index={index} />
+          {displayItems.map((item) => (
+            <GridCardMemo key={item.id} item={item} />
           ))}
         </div>
       </div>

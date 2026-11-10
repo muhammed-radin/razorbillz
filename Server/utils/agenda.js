@@ -27,9 +27,10 @@ const initAgenda = () => {
   agenda = new Agenda({
     // Pass the existing MongoDB driver instance directly from Mongoose
     backend: backend,
-    processEvery: "15 minutes", // How often to scan the DB for due jobs
-    maxConcurrency: 20, // Max total jobs running at once per server instance
-    defaultConcurrency: 5, // Default max concurrent jobs of a single type
+    processEvery: "1 minute", // Poll for due jobs once a minute (free-tier friendly)
+    maxConcurrency: 10, // Max total jobs running at once per server instance
+    defaultConcurrency: 3, // Default max concurrent jobs of a single type
+    logging: false, // Disable internal logging; handle errors in your own code
   });
 
   // Handle Agenda internal errors safely
@@ -59,15 +60,15 @@ const useAgenda = () => {
 };
 
 async function startAssiginTasks(callback) {
-  // stop agenda if it's already running
-  let isStarted = !!agenda._processInterval;
-  if (agenda && isStarted) {
-    await agenda.stop();
+  if (!agenda) return;
+
+  if (typeof callback === "function") {
+    await callback(agenda);
   }
 
-  callback();
-
-  await agenda.start();
+  if (!agenda._processInterval) {
+    await agenda.start();
+  }
 }
 
 const getAgenda = () => {

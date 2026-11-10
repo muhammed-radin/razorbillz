@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Heart, ShoppingCart, Star, Check } from "lucide-react";
+import { Heart, ShoppingCart, Star, Check, Loader2 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +22,8 @@ export default function ProductCard({ product, index = 0 }) {
   const navigate = useNavigate();
   const [imgOk, setImgOk] = useState(false);
   const [added, setAdded] = useState(false);
+  const [pendingAdd, setPendingAdd] = useState(false);
+  const [pendingWish, setPendingWish] = useState(false);
   const addToCart = useCartStore((s) => s.add);
   const { has, toggle } = useWishlistStore();
   const pid = product.productId ?? product.id;
@@ -38,6 +40,8 @@ export default function ProductCard({ product, index = 0 }) {
 
   const handleAdd = async (e) => {
     e.stopPropagation();
+    if (pendingAdd) return;
+    setPendingAdd(true);
     try {
       await addToCart(product, 1);
       setAdded(true);
@@ -45,11 +49,15 @@ export default function ProductCard({ product, index = 0 }) {
       setTimeout(() => setAdded(false), 1400);
     } catch {
       toast.error(t("common.tryAgain"));
+    } finally {
+      setPendingAdd(false);
     }
   };
 
   const handleWish = async (e) => {
     e.stopPropagation();
+    if (pendingWish) return;
+    setPendingWish(true);
     try {
       await toggle(product);
       toast.success(
@@ -57,6 +65,8 @@ export default function ProductCard({ product, index = 0 }) {
       );
     } catch {
       toast.error(t("common.tryAgain"));
+    } finally {
+      setPendingWish(false);
     }
   };
 
@@ -101,15 +111,20 @@ export default function ProductCard({ product, index = 0 }) {
             <TooltipTrigger asChild>
               <button
                 onClick={handleWish}
+                disabled={pendingWish}
                 aria-label="Wishlist"
                 className={cn(
-                  "absolute right-3 top-3 grid size-9 place-items-center rounded-full border backdrop-blur transition active:scale-90",
+                  "absolute right-3 top-3 grid size-9 place-items-center rounded-full border backdrop-blur transition active:scale-90 disabled:cursor-wait disabled:opacity-80",
                   wished
                     ? "bg-rose-500 border-rose-500 text-white shadow-lg"
                     : "bg-background/85 hover:bg-background",
                 )}
               >
-                <Heart className={cn("size-4", wished && "fill-current")} />
+                {pendingWish ? (
+                  <Loader2 className="size-4 animate-spin" />
+                ) : (
+                  <Heart className={cn("size-4", wished && "fill-current")} />
+                )}
               </button>
             </TooltipTrigger>
             <TooltipContent>
@@ -126,7 +141,7 @@ export default function ProductCard({ product, index = 0 }) {
 
       <CardContent className="p-3 sm:p-4">
         <p className="text-[10px] sm:text-[11px] font-semibold uppercase tracking-wider text-muted-foreground truncate">
-          {product.brand || product.category || "Razorbills"}
+          {product.brand || product.category || t("store.name")}
         </p>
         <h3 className="mt-1 line-clamp-2 min-h-9 sm:min-h-10 text-[13px] sm:text-sm font-semibold leading-snug">
           <Link to={`/product/${pid}`} onClick={(e) => e.stopPropagation()}>
@@ -160,18 +175,24 @@ export default function ProductCard({ product, index = 0 }) {
           <Button
             size="sm"
             onClick={handleAdd}
-            disabled={product.stock <= 0}
+            disabled={product.stock <= 0 || pendingAdd}
             className={cn(
-              "rounded-xl gap-1.5 transition-all min-h-9 w-full justify-center sm:w-auto",
+              "rounded-xl gap-1.5 transition-all min-h-9 w-full justify-center sm:w-auto disabled:cursor-wait",
               added && "bg-emerald-600 hover:bg-emerald-600",
             )}
           >
-            {added ? (
+            {pendingAdd ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : added ? (
               <Check className="size-4" />
             ) : (
               <ShoppingCart className="size-4" />
             )}
-            {added ? t("homepage.card.added") : t("homepage.card.add")}
+            {pendingAdd
+              ? t("common.loading")
+              : added
+                ? t("homepage.card.added")
+                : t("homepage.card.add")}
           </Button>
         </div>
       </CardContent>

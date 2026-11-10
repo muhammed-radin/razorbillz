@@ -1,7 +1,7 @@
 // Sign in modal required utility function
 import { api } from "./api";
 import { alert } from "../components/dialog-alert-provider";
-import { generateHashLink } from "./route-util";
+import { generateHashLink } from "@shared/utils/route-util";
 
 async function validateSignInModalRequired() {
   // Check if the user is signed in

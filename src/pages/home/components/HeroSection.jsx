@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useStoreInfo } from "@/utils/store";
 import { useState } from "react";
 import { Reveal } from "./Reveal";
 
@@ -30,6 +31,7 @@ function FloatingChip({ className = "", children, delay = "0s" }) {
 
 export default function HeroSection({ featured, loading }) {
   const { t } = useTranslation();
+  const store = useStoreInfo();
   const navigate = useNavigate();
   const [q, setQ] = useState("");
   const heroProduct = featured?.[0];
@@ -52,7 +54,8 @@ export default function HeroSection({ featured, loading }) {
                 <BadgeCheck className="size-3.5 text-emerald-600" />
                 <span>{t("homepage.hero.badge")}</span>
                 <span className="hidden sm:inline-flex items-center gap-1 text-muted-foreground">
-                  <MapPin className="size-3" /> Malappuram · Kerala
+                  <MapPin className="size-3" /> {store.address.city} ·{" "}
+                  {store.address.state}
                 </span>
               </div>
             </Reveal>
@@ -232,9 +235,9 @@ export default function HeroSection({ featured, loading }) {
                     <span className="grid size-14 place-items-center rounded-3xl bg-muted">
                       <Store className="size-7 text-muted-foreground" />
                     </span>
-                    <h3 className="mt-5 text-xl font-extrabold tracking-tight">
+                    <h2 className="mt-5 text-xl font-extrabold tracking-tight">
                       {t("homepage.hero.emptyTitle")}
-                    </h3>
+                    </h2>
                     <p className="mt-2 max-w-xs text-sm text-muted-foreground">
                       {t("homepage.hero.emptyDesc")}
                     </p>

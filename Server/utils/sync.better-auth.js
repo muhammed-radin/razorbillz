@@ -1,4 +1,5 @@
-import { getAuthInstance } from "./auth";
+import { getAuthInstance } from "./auth.js";
+import { buildMirrorUserFields } from "./crypto/emailVault.js";
 
 export const syncUserDataFromAuth = async (userId) => {
   return new Promise((resolve, reject) => {
@@ -14,14 +15,15 @@ export const syncUserDataFromAuth = async (userId) => {
           return;
         }
 
-        // Update the user data in your database
+        /* Vault the mirror too: sealed email/name/phone + blind-index
+         * tokens (eq/prefix/grams) so admin search works on ciphertext.
+         * Non-vaulted fields pass through as-is. */
         db.collection("users")
           .updateOne(
             { id: userId },
             {
               $set: {
-                name: user.name,
-                email: user.email,
+                ...buildMirrorUserFields(user),
                 role: user.role,
                 emailVerified: user.emailVerified,
                 banned: user.banned,

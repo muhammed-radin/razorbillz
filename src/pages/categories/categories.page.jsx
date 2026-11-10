@@ -1,11 +1,13 @@
 import { GridCard } from "@/components/content-grid";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/utils/api";
-import { Heart, icons } from "lucide-react";
-import { memo, useEffect, useState } from "react";
-import { Helmet } from "react-helmet-async";
+import { Folder, Heart } from "lucide-react";
+import { memo, useState } from "react";
+import { StoreMeta } from "@/components/store-meta";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { resolveIcon } from "@/lib/icons";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 function CategoriesPage() {
   const { t } = useTranslation();
@@ -26,32 +28,27 @@ function CategoriesPage() {
 
   const handleCardClick = (id) => {
     if (id) {
-      navigate(`/search?transform=${id}`);
+      navigate(`/search?transform=true&category=${id}`);
     }
   };
 
-  useEffect(() => {
+  useStrictEffect(() => {
     api.client
       .get(api.categories())
       .then((response) => {
         const parsedData = response.data.map((item) => {
-          const pascalCaseName = item.icon
-            ? item.icon
-                .split("-")
-                .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-                .join("")
-            : "Folder";
-          const IconComponent = icons[pascalCaseName];
-
           return {
             id: item.id,
             title: item.name,
             subtitle:
               item.description ||
               t("categories.noDescription", "No description available"),
-            image: item.image || null,
-            icon: IconComponent ? <IconComponent /> : null,
-            theme: "amber",
+            image: item.image || item.Logo || null,
+            /* Resolved from the curated, statically analysable icon registry
+             * (src/lib/icons.jsx) — importing lucide's dynamic maps pulls in
+             * every icon module and floods the network with requests. */
+            icon: item.icon ? resolveIcon(item.icon) : Folder,
+            theme: "default",
             size: "small",
           };
         });
@@ -67,14 +64,11 @@ function CategoriesPage() {
 
   return (
     <div className="min-h-screen p-3 sm:p-7 max-sm:p-4 max-sm:mt-3">
-      <Helmet>
-        <title>{t("categories.title")} - RazorBills</title>
-        <meta name="description" content={t("categories.subtitle")} />
-        <meta
-          name="keywords"
-          content="categories, razorbills, products, shopping, electronics, home, fashion"
-        />
-      </Helmet>
+      <StoreMeta
+        title={t("categories.title")}
+        description={t("categories.subtitle")}
+        keywords={`categories, ${t("store.name")}, products, shopping, electronics, home, fashion`}
+      />
 
       <div className="max-w-7xl mx-auto">
         {/* Header */}
@@ -84,28 +78,30 @@ function CategoriesPage() {
         </header>
 
         {/* Category List */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-6 auto-rows-auto">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 sm:gap-5 auto-rows-fr">
           {isLoading ? (
             <>
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
-              <Skeleton className="h-40 w-full rounded-lg" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
+              <Skeleton className="h-52 w-full rounded-2xl" />
             </>
           ) : displayItems.length === 0 ? (
             <p className="text-gray-500 col-span-full text-center">
               {t("categories.noCategories")}
             </p>
           ) : (
-            displayItems.map((item, index) => (
+            displayItems.map((item) => (
               <GridCard
                 key={item.id}
                 item={item}
-                index={index}
+                /* Card titles sit directly under the page <h1> here, so they
+                 * are h2s; inside a titled section (home page) h3 is right. */
+                titleAs="h2"
                 onClick={() => {
                   handleCardClick(item.id);
                 }}

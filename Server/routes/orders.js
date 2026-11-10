@@ -6,10 +6,18 @@ import {
 } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import { useMemory } from "../utils/memory.js";
+import { priceOrderItems } from "../utils/orderPricing.js";
+import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
+import { createOrderRecord, releaseOrderStock, decryptOrderAddresses } from "../utils/orderFactory.js";
+import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
+import { isStaffUser } from "../utils/roles.js";
+import { refundRazorpayPayment } from "../utils/razorpay.js";
 import {
   OrderModel,
   OrderStatus,
+  PaymentMethod,
   PaymentStatus,
+  CODStatus,
   FulfillmentStatus,
   CancellationStatus,
   ReturnStatus,
@@ -19,6 +27,100 @@ import {
 /* =========================================================
  * ORDER API ENDPOINTS
  * ========================================================= */
+
+/* Fire a lifecycle event with the full order snapshot so analytics,
+ * user stats and activity logs all see the same authoritative data. */
+function fireOrderEvent(type, order, extra = {}) {
+  try {
+    if (!order) return;
+    const plain =
+      typeof order.toObject === "function" ? order.toObject() : order;
+    const event = new OrderEvent({ type, order: plain });
+    Object.assign(event, extra);
+    evt.fire(type, event);
+  } catch (error) {
+    console.error("[orders] event fire failed:", error?.message);
+  }
+}
+
+function orderStatusEventType(status) {
+  if (status === OrderStatus.DELIVERED) return Evts.ORDER_COMPLETED;
+  if (status === OrderStatus.CANCELLED) return Evts.ORDER_CANCELLED;
+  if (status === OrderStatus.RETURN_REQUESTED) {
+    return Evts.ORDER_RETURN_REQUESTED;
+  }
+  return Evts.ORDER_STATUS_CHANGED;
+}
+
+/* A cancellation is only final once reserved stock is released and any
+ * captured money is queued for refund. Both steps are idempotent, so an
+ * approve retry / double click cannot restock twice or double-queue. */
+async function finalizeCancellation(order, { actorId = null, reason = "Order cancelled" } = {}) {
+  await releaseOrderStock(order);
+
+  let updated = order;
+  if (updated.payment?.status === PaymentStatus.PAID) {
+    try {
+      updated = await updated.ensureCancellationRefund({ reason });
+    } catch (err) {
+      // Never fail the cancellation because the refund queue hiccuped;
+      // the payment stays paid and an admin can queue it manually.
+      console.error("[orders] cancellation refund queue failed:", err?.message);
+    }
+  }
+  return updated;
+}
+
+/* Generic admin status changes must go through the domain methods so the
+ * same guards (payment, returns, inventory) apply as the dedicated
+ * endpoints. `validate:false` from clients is intentionally ignored. */
+async function applyAdminStatusTransition(order, body, actorId) {
+  const status = body?.status;
+  const note = body?.note ?? null;
+  const reason = body?.reason ?? note ?? null;
+
+  switch (status) {
+    case OrderStatus.PROCESSING:
+      return order.startProcessing({ actor: "admin", actorId });
+
+    case OrderStatus.SHIPPED:
+      return order.markAsShipped({
+        trackingNumber: body?.trackingNumber ?? null,
+        serviceName: body?.serviceName ?? null,
+        contactNumber: body?.contactNumber ?? null,
+        email: body?.email ?? null,
+        estimatedDelivery: body?.estimatedDelivery ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.DELIVERED:
+      return order.markAsDelivered({ actor: "admin", actorId });
+
+    case OrderStatus.CANCELLED:
+      return order.cancelOrder({
+        reason: reason ?? "Cancelled by admin",
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURN_REQUESTED:
+      return order.requestReturn({
+        reason: reason ?? "Return requested by admin",
+        detail: body?.detail ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURNED:
+      return order.completeReturn({ actorId });
+
+    default:
+      // PENDING / CONFIRMED have no dedicated method; transitionTo still
+      // validates the edge and rejects same-status calls.
+      return order.transitionTo(status, { note, actor: "admin", actorId });
+  }
+}
 
 /*
  * GET    /orders/list
@@ -204,6 +306,22 @@ const router = express.Router();
 
 const globalMemory = typeof useMemory === "function" ? useMemory() : null;
 
+/* Any non-GET order mutation can change what /list returns (statuses,
+ * cancellation/return subdocs, totals). Invalidate cached list responses
+ * after the response is sent so admin queues never go stale. */
+router.use((req, res, next) => {
+  if (req.method !== "GET" && typeof res.on === "function") {
+    res.on("finish", () => {
+      try {
+        globalMemory?.clearByPrefix?.("/list?");
+      } catch {
+        // Cache invalidation is best-effort; never break the response.
+      }
+    });
+  }
+  next();
+});
+
 /* =========================================================
  * HELPERS
  * ========================================================= */
@@ -246,7 +364,7 @@ router.get(
   "/list",
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({ orders: ["read"] }),
   async (req, res) => {
     try {
       const realtime = req.query?.realtime === "true";
@@ -264,7 +382,9 @@ router.get(
         100,
       );
 
-      const sortBy = getRequestValue(req, "sortBy", "createdAt");
+      const allowedSort = ["createdAt", "updatedAt", "totalAmount", "status"];
+      const rawSortBy = getRequestValue(req, "sortBy", "createdAt");
+      const sortBy = allowedSort.includes(rawSortBy) ? rawSortBy : "createdAt";
 
       const sortOrder = getRequestValue(req, "sortOrder") === "asc" ? 1 : -1;
 
@@ -414,7 +534,8 @@ router.get("/user-orders", requireAuth, passUserAuth, async (req, res) => {
       userId,
     });
 
-    return res.json(orders);
+    // Addresses are sealed at rest — open them only for this response.
+    return res.json(orders.map((o) => decryptOrderAddresses(o)));
   } catch (err) {
     console.error("Error fetching user orders:", err);
 
@@ -444,7 +565,15 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    return res.json(order);
+    const isAdmin = isStaffUser(req.user);
+    if (!isAdmin && order.userId !== req.user?.id) {
+      return res.status(403).json({
+        code: 403,
+        error: "Access denied",
+      });
+    }
+
+    return res.json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error fetching order:", err);
 
@@ -461,308 +590,166 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
  * Create order from user
  * ========================================================= */
 
+/* =========================================================
+ * POST /orders — Cash on Delivery ONLY.
+ *
+ * Order-creation rule: no placed order exists before payment.
+ * - COD: explicit opt-in + eligibility (₹450–₹3,000) -> order is
+ *   created CONFIRMED with payment pending_collection (never paid).
+ * - Razorpay: rejected here (422). Prepaid MUST use the
+ *   payment-attempt flow (POST /payments/razorpay/create ->
+ *   verify), which creates the order only after verification.
+ * ========================================================= */
+
 router.post("/", requireAuth, passUserAuth, async (req, res) => {
-  try {
-    const body = req.body ?? {};
+  const body = req.body ?? {};
+  const userId = req.user?.id ?? body.userId;
 
-    /*
-     * Never trust userId from request body.
-     *
-     * Your passUserAuth middleware should provide
-     * the authenticated user ID.
-     *
-     * Adjust this line to the actual property used
-     * by your middleware.
-     */
-    const userId = req.user?.id ?? body.userId;
-
-    if (!userId) {
-      return res.status(401).json({
-        code: 401,
-        error: "Authenticated user ID is required",
-      });
-    }
-
-    /* ---------------------------------------------
-     * BASIC VALIDATION
-     * --------------------------------------------- */
-
-    if (!Array.isArray(body.products) || body.products.length === 0) {
-      return res.status(400).json({
-        code: 400,
-        error: "Order must contain at least one product",
-      });
-    }
-
-    if (!body.shippingAddress || !body.billingAddress) {
-      return res.status(400).json({
-        code: 400,
-        error: "shippingAddress and billingAddress are required",
-      });
-    }
-
-    if (!body.payment?.method) {
-      return res.status(400).json({
-        code: 400,
-        error: "payment.method is required",
-      });
-    }
-
-    /* ---------------------------------------------
-     * PRODUCT VALIDATION
-     * --------------------------------------------- */
-
-    const invalidProducts = body.products.filter((product) => {
-      return (
-        !product?.productId ||
-        !product?.title ||
-        !product?.thumbnail ||
-        !product?.sku ||
-        !product?.category ||
-        !product?.brand ||
-        !Number.isFinite(Number(product?.originalPrice)) ||
-        !Number.isFinite(Number(product?.price)) ||
-        !Number.isInteger(Number(product?.quantity)) ||
-        Number(product.quantity) <= 0 ||
-        Number(product.price) < 0 ||
-        Number(product.originalPrice) < 0
-      );
+  if (!userId) {
+    return res.status(401).json({
+      code: 401,
+      error: "Authenticated user ID is required",
     });
+  }
 
-    if (invalidProducts.length > 0) {
-      return res.status(400).json({
-        code: 8002,
-        error: "Invalid product data in order",
-        invalidProducts,
-      });
-    }
+  /* Idempotency: same key + same user returns the original order
+   * instead of creating a duplicate (double-submit / retry safe). */
+  const idempotencyKey =
+    req.headers["x-idempotency-key"] ?? body.idempotencyKey ?? null;
 
-    /* ---------------------------------------------
-     * NORMALIZE ITEMS
-     * --------------------------------------------- */
-
-    const products = body.products.map((product) => ({
-      productId: String(product.productId),
-
-      title: String(product.title),
-
-      thumbnail: String(product.thumbnail),
-
-      originalPrice: Number(product.originalPrice),
-
-      price: Number(product.price),
-
-      sku: String(product.sku),
-
-      category: String(product.category),
-
-      brand: String(product.brand),
-
-      quantity: Number(product.quantity),
-
-      specialInfo: product.specialInfo ?? {},
-
-      returnedQuantity: 0,
-
-      refundedQuantity: 0,
-    }));
-
-    /* ---------------------------------------------
-     * CALCULATE SUBTOTAL
-     * --------------------------------------------- */
-
-    const subtotal = products.reduce(
-      (total, product) => total + product.price * product.quantity,
-      0,
-    );
-
-    /* ---------------------------------------------
-     * DISCOUNT
-     *
-     * Temporary validation until coupon service
-     * is connected.
-     * --------------------------------------------- */
-
-    const discountAmount = Math.max(0, Number(body.discount?.amount ?? 0));
-
-    if (discountAmount > subtotal) {
-      return res.status(400).json({
-        code: 8003,
-        error: "Discount cannot exceed subtotal",
-      });
-    }
-
-    const discount = {
-      codes: Array.isArray(body.discount?.codes) ? body.discount.codes : [],
-
-      amount: discountAmount,
-    };
-
-    /* ---------------------------------------------
-     * TAX
-     *
-     * tax = percentage
-     * taxAmount = actual money
-     * --------------------------------------------- */
-
-    const tax = Math.max(0, Number(body.tax ?? 0));
-
-    const taxableAmount = subtotal - discount.amount;
-
-    const calculatedTaxAmount = Number(
-      (taxableAmount * (tax / 100)).toFixed(2),
-    );
-
-    /* ---------------------------------------------
-     * SHIPPING
-     * --------------------------------------------- */
-
-    const shippingAmount = Math.max(0, Number(body.shippingAmount ?? 0));
-
-    /* ---------------------------------------------
-     * TOTAL
-     * --------------------------------------------- */
-
-    const calculatedTotalAmount = Number(
-      (taxableAmount + calculatedTaxAmount + shippingAmount).toFixed(2),
-    );
-
-    /* ---------------------------------------------
-     * OPTIONAL CLIENT TOTAL VALIDATION
-     *
-     * If the frontend sends totalAmount, verify it.
-     * Server calculation remains authoritative.
-     * --------------------------------------------- */
-
-    if (
-      body.totalAmount !== undefined &&
-      Number(body.totalAmount) !== calculatedTotalAmount
-    ) {
-      return res.status(400).json({
-        code: 8001,
-        error:
-          "Invalid order data, totalAmount does not match server calculation",
-
-        expected: calculatedTotalAmount,
-
-        received: Number(body.totalAmount),
-      });
-    }
-
-    /* ---------------------------------------------
-     * CREATE ORDER DATA
-     * --------------------------------------------- */
-
-    const orderData = {
-      id:
-        body.id ??
-        `ORD-${Date.now()}-${Math.random()
-          .toString(36)
-          .slice(2, 8)
-          .toUpperCase()}`,
-
-      userId,
-
-      products,
-
-      subtotal,
-
-      discount,
-
-      tax,
-
-      taxAmount: calculatedTaxAmount,
-
-      shippingAmount,
-
-      totalAmount: calculatedTotalAmount,
-
-      currency: body.currency ?? "INR",
-
-      status: OrderStatus.PENDING,
-
-      payment: {
-        method: body.payment.method,
-
-        status: PaymentStatus.PENDING,
-
-        transactionId: body.payment?.transactionId ?? null,
-
-        amountPaid: 0,
-
-        refundedAmount: 0,
-      },
-
-      fulfillment: {
-        status: FulfillmentStatus.UNFULFILLED,
-      },
-
-      cancellation: {
-        status: CancellationStatus.NONE,
-      },
-
-      return: {
-        status: ReturnStatus.NONE,
-      },
-
-      refund: {
-        status: RefundStatus.NONE,
-      },
-
-      /*
-       * Copy addresses as order snapshots.
-       */
-      shippingAddress: body.shippingAddress,
-
-      billingAddress: body.billingAddress,
-    };
-
-    /* ---------------------------------------------
-     * CREATE
-     * --------------------------------------------- */
-
-    const order = await OrderModel.create(orderData);
-
-    /* ---------------------------------------------
-     * USER STATISTICS
-     * --------------------------------------------- */
-
-    /*
-     * This should ideally be handled together with
-     * your order creation workflow / event system.
-     */
+  if (idempotencyKey) {
     try {
-      await db.collection("users").updateOne(
-        { id: userId },
-        {
-          $inc: {
-            totalOrders: 1,
-          },
-        },
-      );
-    } catch (userErr) {
-      /*
-       * Don't destroy the successful order response
-       * merely because a secondary statistic update
-       * failed.
-       */
-      console.error("Failed to update user order statistics:", userErr);
+      const existing = await OrderModel.findOne({ idempotencyKey, userId });
+      if (existing) {
+        return res
+          .status(200)
+          .json({ ...decryptOrderAddresses(existing), deduplicated: true });
+      }
+    } catch {
+      // fall through to creation
     }
+  }
 
-    return res.status(201).json(order);
+  evt.fire(Evts.ORDER_CREATE_ATTEMPT, { userId });
+
+  if (!Array.isArray(body.products) || body.products.length === 0) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, { userId, reason: "empty products" });
+    return res.status(400).json({
+      code: 400,
+      error: "Order must contain at least one product",
+    });
+  }
+
+  if (!body.shippingAddress || !body.billingAddress) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, { userId, reason: "missing address" });
+    return res.status(400).json({
+      code: 400,
+      error: "shippingAddress and billingAddress are required",
+    });
+  }
+
+  const rawMethod = String(body.payment?.method ?? "")
+    .toLowerCase()
+    .trim();
+  if (rawMethod !== PaymentMethod.COD) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, { userId, reason: "non-cod method" });
+    return res.status(422).json({
+      code: 422,
+      error:
+        "Prepaid orders must use the verified payment flow: POST /api/payments/razorpay/create, then verify. " +
+        "Direct order creation is Cash on Delivery only.",
+    });
+  }
+
+  /* Cart integrity: the items being checked out must match the user's
+   * persisted server cart (guards stale/optimistic client carts). */
+  try {
+    await assertCartMatchesServerCart({ userId, items: body.products });
+  } catch (err) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, { userId, reason: "cart mismatch" });
+    return res.status(err?.status ?? 409).json({
+      code: err?.code ?? "CART_MISMATCH",
+      error:
+        err?.message ??
+        "Your cart changed. Please review the cart and try again.",
+      ...(err?.details ? { details: err.details } : {}),
+    });
+  }
+
+  /* Server-authoritative pricing + COD eligibility (₹450–₹3,000).
+   * Client prices/totals are ignored; manipulated requests fail here. */
+  let priced;
+  try {
+    priced = await priceOrderItems(body.products, {
+      method: PaymentMethod.COD,
+    });
+  } catch (err) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, {
+      userId,
+      reason: err?.message ?? "pricing failed",
+    });
+    return res.status(err?.code ?? 400).json({
+      code: err?.code ?? 400,
+      error: err?.message ?? "Invalid order items",
+      productId: err?.productId,
+    });
+  }
+
+  if (
+    body.totalAmount !== undefined &&
+    Number(body.totalAmount) !== priced.totalAmount
+  ) {
+    evt.fire(Evts.ORDER_CREATE_FAILED, {
+      userId,
+      reason: "total mismatch",
+      expected: priced.totalAmount,
+      received: Number(body.totalAmount),
+    });
+    return res.status(400).json({
+      code: 8001,
+      error:
+        "Invalid order data, totalAmount does not match server calculation",
+      expected: priced.totalAmount,
+      received: Number(body.totalAmount),
+    });
+  }
+
+  try {
+    const order = await createOrderRecord({
+      userId,
+      priced,
+      shippingAddress: body.shippingAddress,
+      billingAddress: body.billingAddress,
+      method: PaymentMethod.COD,
+      idempotencyKey,
+      confirm: true,
+      confirmNote: "COD order confirmed",
+    });
+    return res.status(201).json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error creating order:", err);
 
     if (err?.code === 11000) {
+      if (idempotencyKey) {
+        const existing = await OrderModel.findOne({
+          idempotencyKey,
+          userId,
+        }).catch(() => null);
+        if (existing) {
+          return res
+            .status(200)
+            .json({ ...decryptOrderAddresses(existing), deduplicated: true });
+        }
+      }
       return res.status(409).json({
         code: 11000,
         error: "Order ID already exists",
       });
     }
 
-    return res.status(500).json({
-      code: 500,
-      error: "Failed to create order",
+    return res.status(err?.code === 422 ? 422 : 500).json({
+      code: err?.code ?? 500,
+      error: err?.message ?? "Failed to create order",
     });
   }
 });
@@ -791,7 +778,7 @@ router.get("/:id/status", requireAuth, passUserAuth, async (req, res) => {
      *
      * Admins may access any order.
      */
-    const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+    const isAdmin = isStaffUser(req.user);
 
     if (!isAdmin && order.userId !== req.user?.id) {
       return res.status(403).json({
@@ -860,14 +847,44 @@ router.post("/:id/cancel", requireAuth, passUserAuth, async (req, res) => {
     if (!order.canCancel()) {
       return res.status(400).json({
         code: 400,
-        error: `Order cannot be cancelled from status: ${order.status}`,
+        error: `Order cannot be cancelled from status: ${order.status}. Only pending, confirmed, or processing orders can be cancelled.`,
       });
     }
 
-    const updatedOrder = await order.requestCancellation({
-      reason: req.body?.reason ?? null,
+    const reason = String(req.body?.reason ?? "").trim();
+    const detail = String(req.body?.detail ?? "").trim();
+    if (!reason) {
+      return res.status(400).json({
+        code: 400,
+        error: "A cancellation reason is required.",
+      });
+    }
+    if (reason === "Other" && !detail) {
+      return res.status(400).json({
+        code: 400,
+        error: "Please explain the reason when selecting Other.",
+      });
+    }
 
-      actorId: req.user?.id ?? null,
+    let updatedOrder;
+    try {
+      updatedOrder = await order.requestCancellation({
+        reason,
+        detail: detail || null,
+        actorId: req.user?.id ?? null,
+      });
+    } catch (err) {
+      return res.status(400).json({
+        code: 400,
+        error: err?.message ?? "Cancellation request failed.",
+      });
+    }
+
+    // A cancellation *request* is not a cancellation yet; only approval
+    // moves the order out of circulation (and decrements counters).
+    fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+      requested: true,
+      reason,
     });
 
     return res.json({
@@ -894,7 +911,7 @@ router.post(
   "/:id/cancel/approve",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -912,9 +929,22 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      /* Terminal cancellation restores reserved inventory and (for a
+       * captured payment) enters the refund queue. Both are idempotent. */
+      const finalized = await finalizeCancellation(updatedOrder, {
+        actorId: req.user?.id ?? null,
+        reason: updatedOrder.cancellation?.reason ?? "Order cancelled",
+      });
+
+      fireOrderEvent(Evts.ORDER_CANCELLED, finalized, {
+        approved: true,
+        actorId: req.user?.id ?? null,
+        refundPending: finalized.refund?.status === RefundStatus.PENDING,
+      });
+
       return res.json({
         success: true,
-        order: updatedOrder,
+        order: finalized,
       });
     } catch (err) {
       console.error("Error approving cancellation:", err);
@@ -937,7 +967,7 @@ router.post(
   "/:id/cancel/reject",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -980,10 +1010,11 @@ router.post(
   "/:id/updateStatus",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
-      const { status, note = null, validate = true } = req.body ?? {};
+      const body = req.body ?? {};
+      const status = body.status;
 
       if (!status) {
         return res.status(400).json({
@@ -1010,11 +1041,30 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.transitionTo(status, {
-        note,
-        actor: "admin",
+      /* `validate:false` used to bypass the state machine entirely.
+       * It is no longer honoured: every transition is validated. */
+      let updatedOrder = await applyAdminStatusTransition(
+        order,
+        body,
+        req.user?.id ?? null,
+      );
+
+      if (status === OrderStatus.CANCELLED) {
+        updatedOrder = await finalizeCancellation(updatedOrder, {
+          actorId: req.user?.id ?? null,
+          reason: body.reason ?? body.note ?? "Cancelled by admin",
+        });
+      } else if (status === OrderStatus.RETURNED) {
+        // Completing a return puts the units back into inventory once.
+        await releaseOrderStock(updatedOrder, { reason: "return" });
+      }
+
+      fireOrderEvent(orderStatusEventType(status), updatedOrder, {
+        note: body.note ?? null,
         actorId: req.user?.id ?? null,
-        validate: validate !== false,
+        ...(status === OrderStatus.CANCELLED
+          ? { refundPending: updatedOrder.refund?.status === RefundStatus.PENDING }
+          : {}),
       });
 
       return res.json({
@@ -1040,7 +1090,7 @@ router.post(
   "/:id/payment/paid",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1054,6 +1104,28 @@ router.post(
         });
       }
 
+      const wasPaid = order.payment.status === PaymentStatus.PAID;
+
+      if (
+        [
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_REFUNDED",
+          error: "A refunded order cannot be marked as paid.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot mark a ${order.status} order as paid.`,
+        });
+      }
+
       const updatedOrder = await order.markAsPaid({
         transactionId: req.body?.transactionId ?? null,
 
@@ -1062,6 +1134,11 @@ router.post(
             ? Number(req.body.amount)
             : order.totalAmount,
       });
+
+      // Idempotent endpoint: never count the same payment twice.
+      if (!wasPaid) {
+        fireOrderEvent(Evts.ORDER_PAID, updatedOrder);
+      }
 
       return res.json({
         success: true,
@@ -1086,7 +1163,7 @@ router.post(
   "/:id/payment/failed",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1100,9 +1177,34 @@ router.post(
         });
       }
 
+      if (
+        [
+          PaymentStatus.PAID,
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_CAPTURED",
+          error: "A paid/refunded order cannot be marked as payment failed.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot fail payment on a ${order.status} order.`,
+        });
+      }
+
       const updatedOrder = await order.markPaymentFailed(
         req.body?.reason ?? null,
       );
+
+      fireOrderEvent(Evts.PAYMENT_FAILED, updatedOrder, {
+        reason: req.body?.reason ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1127,7 +1229,7 @@ router.post(
   "/:id/process",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1143,6 +1245,11 @@ router.post(
 
       const updatedOrder = await order.startProcessing({
         actor: "admin",
+        actorId: req.user?.id ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order processing",
         actorId: req.user?.id ?? null,
       });
 
@@ -1169,7 +1276,7 @@ router.post(
   "/:id/packed",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1184,6 +1291,11 @@ router.post(
       }
 
       const updatedOrder = await order.markAsPacked();
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order packed",
+        actorId: req.user?.id ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1208,7 +1320,7 @@ router.post(
   "/:id/ship",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1238,6 +1350,11 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order shipped",
+        actorId: req.user?.id ?? null,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1261,7 +1378,7 @@ router.post(
   "/:id/deliver",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1277,6 +1394,10 @@ router.post(
 
       const updatedOrder = await order.markAsDelivered({
         actor: "admin",
+        actorId: req.user?.id ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_COMPLETED, updatedOrder, {
         actorId: req.user?.id ?? null,
       });
 
@@ -1321,9 +1442,55 @@ router.post("/:id/return", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    const updatedOrder = await order.requestReturn({
-      reason: req.body?.reason ?? null,
-    });
+    // Returns are accepted for delivered orders within 7 days.
+    if (
+      order.status === OrderStatus.DELIVERED &&
+      order.fulfillment?.deliveredAt
+    ) {
+      const days =
+        (Date.now() - new Date(order.fulfillment.deliveredAt).getTime()) /
+        86400000;
+      if (days > Number(process.env.RETURN_WINDOW_DAYS ?? 7)) {
+        return res.status(400).json({
+          code: 400,
+          error: `Return window closed (${process.env.RETURN_WINDOW_DAYS ?? 7} days after delivery). Contact support for help.`,
+        });
+      }
+    }
+
+    const reason = String(req.body?.reason ?? "").trim();
+    const detail = String(req.body?.detail ?? "").trim();
+    if (!reason) {
+      return res.status(400).json({
+        code: 400,
+        error: "A return reason is required.",
+      });
+    }
+    if (reason === "Other" && !detail) {
+      return res.status(400).json({
+        code: 400,
+        error: "Please explain the reason when selecting Other.",
+      });
+    }
+
+    let updatedOrder;
+    try {
+      updatedOrder = await order.requestReturn({
+        reason,
+        detail: detail || null,
+        actor: "user",
+        actorId: req.user?.id ?? null,
+      });
+    } catch (err) {
+      return res.status(400).json({
+        code: 400,
+        error: err?.message ?? "Return request failed.",
+      });
+    }
+
+    // A request never marks items returned, refunds payment, or
+    // triggers courier pickup — admin review is required first.
+    fireOrderEvent(Evts.ORDER_RETURN_REQUESTED, updatedOrder, { reason });
 
     return res.json({
       success: true,
@@ -1347,7 +1514,7 @@ router.post(
   "/:id/return/approve",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1388,7 +1555,7 @@ router.post(
   "/:id/return/reject",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1404,6 +1571,7 @@ router.post(
 
       const updatedOrder = await order.rejectReturn({
         reason: req.body?.reason ?? null,
+        actorId: req.user?.id ?? null,
       });
 
       return res.json({
@@ -1429,7 +1597,7 @@ router.post(
   "/:id/return/received",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1444,6 +1612,10 @@ router.post(
       }
 
       const updatedOrder = await order.markReturnReceived();
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return package received",
+      });
 
       return res.json({
         success: true,
@@ -1468,7 +1640,7 @@ router.post(
   "/:id/return/complete",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1484,6 +1656,13 @@ router.post(
 
       const updatedOrder = await order.completeReturn({
         actorId: req.user?.id ?? null,
+      });
+
+      // Returned units re-enter inventory exactly once.
+      await releaseOrderStock(updatedOrder, { reason: "return" });
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return completed",
       });
 
       return res.json({
@@ -1511,7 +1690,7 @@ router.post(
   "/:id/refund",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1542,6 +1721,11 @@ router.post(
         reason: req.body?.reason ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "refund requested",
+        amount,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1565,7 +1749,7 @@ router.post(
   "/:id/refund/complete",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1579,8 +1763,70 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.completeRefund({
-        transactionId: req.body?.transactionId ?? null,
+      if (order.refund.status !== RefundStatus.PENDING) {
+        // Idempotent: a retried "complete" returns the final state.
+        if (
+          order.refund.status === RefundStatus.REFUNDED ||
+          order.refund.status === RefundStatus.PARTIALLY_REFUNDED
+        ) {
+          return res.json({ success: true, order, deduplicated: true });
+        }
+        return res.status(400).json({
+          code: 400,
+          error: "No pending refund exists.",
+        });
+      }
+
+      let transactionId = req.body?.transactionId ?? null;
+      const manual = req.body?.manual === true;
+      const method = order.payment?.method;
+
+      /* Prepaid refunds go back through the gateway unless an operator
+       * explicitly records an already-issued manual refund (with its
+       * reference). COD refunds have no gateway payment, so the operator
+       * supplies the bank/UPI reference (or none for cash). */
+      if (!transactionId && !manual && method === PaymentMethod.RAZORPAY) {
+        const paymentId =
+          order.payment?.razorpayPaymentId ?? order.payment?.transactionId;
+        if (!paymentId) {
+          return res.status(400).json({
+            code: "REFUND_REFERENCE_REQUIRED",
+            error:
+              "No Razorpay payment reference on this order. Pass transactionId or manual:true after issuing the refund.",
+          });
+        }
+        try {
+          const gatewayRefund = await refundRazorpayPayment({
+            paymentId,
+            amountInr: order.refund.amount,
+          });
+          transactionId = gatewayRefund?.id ?? null;
+        } catch (err) {
+          console.error("[orders] gateway refund failed:", err?.message);
+          return res.status(502).json({
+            code: "REFUND_GATEWAY_FAILED",
+            error:
+              err?.message ??
+              "The gateway refund could not be completed. The refund stays pending.",
+          });
+        }
+      }
+
+      if (!transactionId && !manual && method !== PaymentMethod.COD) {
+        return res.status(400).json({
+          code: "REFUND_REFERENCE_REQUIRED",
+          error:
+            "A refund reference is required. Pass transactionId, or manual:true after issuing the refund.",
+        });
+      }
+
+      const updatedOrder = await order.completeRefund({ transactionId });
+
+      fireOrderEvent(Evts.ORDER_REFUNDED, updatedOrder, {
+        amount: updatedOrder.refund?.amount ?? 0,
+        actorId: req.user?.id ?? null,
+        method,
+        manual,
       });
 
       return res.json({
@@ -1606,7 +1852,7 @@ router.patch(
   "/:id/shipping",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({
@@ -1653,7 +1899,7 @@ router.patch(
   "/:id/shipping/estimated-delivery",
   requireAuth,
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
       const { estimatedDate } = req.body ?? {};
@@ -1706,11 +1952,47 @@ router.patch(
  * ADMIN SHORTCUTS
  * ========================================================= */
 
+/* Legacy reconciliation: Razorpay orders stuck in pending/failed
+ * payment (e.g. created by the old pre-verification flow or stubs).
+ * These are NOT placed orders: no revenue, no shipment, no stock
+ * move is assumed. Never auto-mark paid; use the retry flow or
+ * cancel them explicitly. */
+router.get(
+  "/admin/unverified",
+  requireAuth,
+  requireAdmin,
+  requirePermission({ orders: ["read"] }),
+  async (req, res) => {
+    try {
+      const limit = Math.min(
+        Number.parseInt(req.query?.limit ?? "50", 10) || 50,
+        100,
+      );
+      const orders = await OrderModel.find({
+        "payment.method": PaymentMethod.RAZORPAY,
+        "payment.status": {
+          $in: [PaymentStatus.PENDING, PaymentStatus.FAILED],
+        },
+      })
+        .sort({ createdAt: -1 })
+        .limit(limit)
+        .lean();
+      return res.json({ count: orders.length, orders });
+    } catch (err) {
+      console.error("Error fetching unverified orders:", err);
+      return res.status(500).json({
+        code: 500,
+        error: "Failed to fetch unverified orders",
+      });
+    }
+  },
+);
+
 router.get(
   "/admin/pending",
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({ orders: ["read"] }),
   async (req, res) => {
     try {
       const orders = await OrderModel.getPendingOrders();
@@ -1734,7 +2016,7 @@ router.get(
   "/admin/processing",
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({ orders: ["read"] }),
   async (req, res) => {
     try {
       const orders = await OrderModel.getProcessingOrders();
@@ -1758,7 +2040,7 @@ router.get(
   "/admin/returns",
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({ orders: ["read"] }),
   async (req, res) => {
     try {
       const orders = await OrderModel.getReturnRequests();
@@ -1782,7 +2064,7 @@ router.get(
   "/admin/refunds",
   requireAuth,
   requireAdmin,
-  requirePermission("read"),
+  requirePermission({ orders: ["read"] }),
   async (req, res) => {
     try {
       const orders = await OrderModel.getPendingRefunds();
@@ -1813,7 +2095,7 @@ router.delete(
   "/:id",
   requireAuth,
   requireAdmin,
-  requirePermission("delete"),
+  requirePermission({ orders: ["delete"] }),
   async (req, res) => {
     try {
       const order = await OrderModel.findOne({

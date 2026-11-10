@@ -82,14 +82,27 @@ const OrderSummary1 = ({
   className
 }) => {
   const formatPrice = (price) => {
-    return new Intl.NumberFormat("en-US", {
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
-      currency: "USD",
-    }).format(price);
+      currency: "INR",
+    }).format(Number(price ?? 0));
+  };
+
+  /* Defensive normalization: missing/unknown shapes (loading states,
+   * partial API responses, new statuses) must never crash the page. */
+  const safe = {
+    ...(order ?? {}),
+    items: Array.isArray(order?.items) ? order.items : [],
+    shippingAddress: order?.shippingAddress ?? {},
+    paymentMethod: order?.paymentMethod ?? {},
   };
 
   const getStatusBadge = (status) => {
     const variants = {
+      pending: {
+        label: "Pending Payment",
+        className: "bg-gray-500/10 text-gray-600 hover:bg-gray-500/10",
+      },
       confirmed: {
         label: "Order Confirmed",
         className: "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10",
@@ -106,11 +119,29 @@ const OrderSummary1 = ({
         label: "Delivered",
         className: "bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/10",
       },
+      cancelled: {
+        label: "Cancelled",
+        className: "bg-red-500/10 text-red-600 hover:bg-red-500/10",
+      },
+      return_requested: {
+        label: "Return Requested",
+        className: "bg-orange-500/10 text-orange-600 hover:bg-orange-500/10",
+      },
+      returned: {
+        label: "Returned",
+        className: "bg-purple-500/10 text-purple-600 hover:bg-purple-500/10",
+      },
     };
-    return variants[status];
+    // Unknown/missing statuses must never crash the page.
+    return (
+      variants[status] ?? {
+        label: status ? String(status).replace(/_/g, " ") : "Order Placed",
+        className: "bg-muted text-muted-foreground hover:bg-muted",
+      }
+    );
   };
 
-  const statusBadge = getStatusBadge(order.status);
+  const statusBadge = getStatusBadge(safe.status);
 
   return (
     <section className={cn("py-16 md:py-24", className)}>
@@ -125,7 +156,7 @@ const OrderSummary1 = ({
           </h1>
           <p className="text-muted-foreground">
             A confirmation email has been sent to{" "}
-            <span className="font-medium text-foreground">{order.email}</span>
+            <span className="font-medium text-foreground">{safe.email}</span>
           </p>
         </div>
 
@@ -135,7 +166,7 @@ const OrderSummary1 = ({
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
               <div>
                 <p className="text-sm text-muted-foreground">Order Number</p>
-                <p className="font-semibold">{order.orderNumber}</p>
+                <p className="font-semibold">{safe.orderNumber}</p>
               </div>
               <Separator
                 orientation="vertical"
@@ -143,7 +174,7 @@ const OrderSummary1 = ({
               />
               <div>
                 <p className="text-sm text-muted-foreground">Order Date</p>
-                <p className="font-medium">{order.orderDate}</p>
+                <p className="font-medium">{safe.orderDate}</p>
               </div>
             </div>
             <Badge className={statusBadge.className}>{statusBadge.label}</Badge>
@@ -162,7 +193,7 @@ const OrderSummary1 = ({
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                {order.items.map((item, index) => (
+                {safe.items.map((item, index) => (
                   <div key={item.id}>
                     <div className="flex gap-4">
                       <div className="w-20 shrink-0">
@@ -204,7 +235,7 @@ const OrderSummary1 = ({
                         )}
                       </div>
                     </div>
-                    {index < order.items.length - 1 && (
+                    {index < safe.items.length - 1 && (
                       <Separator className="mt-4" />
                     )}
                   </div>
@@ -218,30 +249,30 @@ const OrderSummary1 = ({
                 <div className="space-y-3">
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Subtotal</span>
-                    <span>{formatPrice(order.subtotal)}</span>
+                    <span>{formatPrice(safe.subtotal)}</span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Shipping</span>
                     <span>
-                      {order.shipping === 0
+                      {safe.shipping === 0
                         ? "Free"
-                        : formatPrice(order.shipping)}
+                        : formatPrice(safe.shipping)}
                     </span>
                   </div>
                   <div className="flex justify-between text-sm">
                     <span className="text-muted-foreground">Tax</span>
-                    <span>{formatPrice(order.tax)}</span>
+                    <span>{formatPrice(safe.tax)}</span>
                   </div>
-                  {order.discount && order.discount > 0 && (
+                  {safe.discount && safe.discount > 0 && (
                     <div className="flex justify-between text-sm text-emerald-600">
                       <span>Discount</span>
-                      <span>-{formatPrice(order.discount)}</span>
+                      <span>-{formatPrice(safe.discount)}</span>
                     </div>
                   )}
                   <Separator />
                   <div className="flex justify-between text-lg font-semibold">
                     <span>Total Paid</span>
-                    <span>{formatPrice(order.total)}</span>
+                    <span>{formatPrice(safe.total)}</span>
                   </div>
                 </div>
               </CardContent>
@@ -260,16 +291,16 @@ const OrderSummary1 = ({
               </CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <p className="font-medium">{order.shippingAddress.name}</p>
+                  <p className="font-medium">{safe.shippingAddress.name}</p>
                   <p className="text-sm text-muted-foreground">
-                    {order.shippingAddress.street}
+                    {safe.shippingAddress.street}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {order.shippingAddress.city}, {order.shippingAddress.state}{" "}
-                    {order.shippingAddress.zipCode}
+                    {safe.shippingAddress.city}, {safe.shippingAddress.state}{" "}
+                    {safe.shippingAddress.zipCode}
                   </p>
                   <p className="text-sm text-muted-foreground">
-                    {order.shippingAddress.country}
+                    {safe.shippingAddress.country}
                   </p>
                 </div>
                 <Separator />
@@ -277,10 +308,10 @@ const OrderSummary1 = ({
                   <Truck className="mt-0.5 size-4 text-muted-foreground" />
                   <div>
                     <p className="text-sm font-medium">
-                      {order.shippingMethod}
+                      {safe.shippingMethod}
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      Estimated delivery: {order.estimatedDelivery}
+                      Estimated delivery: {safe.estimatedDelivery}
                     </p>
                   </div>
                 </div>
@@ -296,7 +327,7 @@ const OrderSummary1 = ({
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {order.paymentMethod.type === "card" && (
+                {safe.paymentMethod.type === "card" && (
                   <div className="flex items-center gap-3">
                     <img
                       src="https://deifkwefumgah.cloudfront.net/shadcnblocks/block/logos/visa-icon.svg"
@@ -305,8 +336,8 @@ const OrderSummary1 = ({
                     />
                     <div>
                       <p className="text-sm font-medium">
-                        {order.paymentMethod.cardBrand} ending in{" "}
-                        {order.paymentMethod.lastFour}
+                        {safe.paymentMethod.cardBrand} ending in{" "}
+                        {safe.paymentMethod.lastFour}
                       </p>
                       <p className="text-sm text-muted-foreground">
                         Payment completed
@@ -314,7 +345,7 @@ const OrderSummary1 = ({
                     </div>
                   </div>
                 )}
-                {order.paymentMethod.type === "paypal" && (
+                {safe.paymentMethod.type === "paypal" && (
                   <div className="flex items-center gap-3">
                     <div className="flex size-10 items-center justify-center rounded-md bg-muted">
                       <img
@@ -326,7 +357,7 @@ const OrderSummary1 = ({
                     <div>
                       <p className="text-sm font-medium">PayPal</p>
                       <p className="text-sm text-muted-foreground">
-                        {order.paymentMethod.email}
+                        {safe.paymentMethod.email}
                       </p>
                     </div>
                   </div>

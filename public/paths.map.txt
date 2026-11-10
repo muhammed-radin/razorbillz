@@ -1,0 +1,744 @@
+====================================================================================================
+RAZORBILLS - COMPLETE FRONT-END SITE & ROUTE ACCESS MAP
+====================================================================================================
+Target Output File : public/paths.map.txt
+Project Domain     : https://razorbills.vercel.app
+Router Engine      : React Router v6 (createHashRouter)
+Browser URL Scheme : Hash-based (#/<path>)
+Generated Date     : 2026-10-13
+Source References  : src/router/Router.jsx, src/App.jsx, src/pages/Admin/auth/page.index.jsx,
+                     src/pages/Admin/admin.app.jsx, public/robots.txt, dist/sitemap.xml, public/sitemap.xml
+
+----------------------------------------------------------------------------------------------------
+1. ACCESS CONTROL ROLES & DEFINITIONS
+----------------------------------------------------------------------------------------------------
+- PUBLIC / ANONYMOUS VISITOR:
+  Unauthenticated user accessing the site for the first time without an active session or cookies.
+  Can browse public catalog and policy pages without restrictions.
+
+- GUEST SESSION (ANONYMOUS AUTH):
+  Temporary guest account generated via authClient.signIn.anonymous() when an unauthenticated
+  user opts to continue without a formal login. Marked as `session.user.isAnonymous === true`.
+  Permitted on all routes listed in `GUEST_ACCESS_PATHS` in App.jsx. Attempting to visit non-guest
+  routes redirects the user to the home page ("/").
+
+- REGISTERED CUSTOMER (AUTHENTICATED USER):
+  User signed in with a validated customer account (Email/Password or Google OAuth).
+  Has `isAnonymous === false` and `role !== "admin"`. Has full access to personal account
+  sections, cart, checkout, order tracking, address book, wishlist, support, and settings.
+
+- ADMINISTRATOR (ADMIN ROLE):
+  Authenticated user with `role === "admin"`. Has exclusive access to the administrative
+  backoffice under `/auth/admin/*`. Attempting to access admin routes by non-admins or
+  unauthenticated visitors results in an immediate redirection to "/404" (security obfuscation).
+
+- SEARCH ENGINE BOT / CRAWLER:
+  Automated crawlers (Googlebot, Bingbot, etc.) regulated by `public/robots.txt`.
+  Disallowed from visiting `/auth/`, `/admin/`, and `/auth/admin`. Allowed on general public routes.
+
+----------------------------------------------------------------------------------------------------
+2. ARCHITECTURAL GUARDS & ROUTING MECHANISMS
+----------------------------------------------------------------------------------------------------
+1. Hash Router Implementation:
+   Defined via `createHashRouter` in `src/router/Router.jsx`.
+   All frontend paths resolve in browsers with the hash anchor prefix (e.g., `/#/search`).
+
+2. SessionLayout (Root Wrapper):
+   All routes are wrapped in `UserSessionProvider` in `src/router/SessionLayout.jsx`, providing
+   centralized session lifecycle management (`useUserSession()`).
+
+3. App.jsx Route Guard (Customer & Storefront Routes):
+   - `GUEST_ACCESS_PATHS`: ["/", "/search", "/categories", "/order-status", "/product/:id",
+     "/login", "/signup", "/forgot-password", "/about", "/contact", "/return", "/shipping",
+     "/privacy", "/terms"]
+   - If an unauthenticated user visits a route NOT in `GUEST_ACCESS_PATHS` and NOT in `HIDE_CHROME_PATHS`,
+     an "Authentication Required" confirmation dialog is displayed:
+     * Clicking "Login" redirects to `/login`.
+     * Clicking "Continue as Guest" creates an anonymous session.
+   - If a user has an anonymous session (`isAnonymous === true`) and visits a route outside
+     `GUEST_ACCESS_PATHS`, they are redirected to `/`.
+   - `HIDE_CHROME_PATHS`: ["/login", "/signup", "/forgot-password"] suppresses Navbar, Footer, and
+     Mobile Bottom Nav to present distraction-free authentication interfaces.
+
+4. AdminAuth Guard (Admin Routes):
+   - Defined in `src/pages/Admin/auth/page.index.jsx` wrapping `/auth/admin/*`.
+   - Validates `data.user.role === "admin"`.
+   - If unauthenticated, pending error, or not role "admin": silently redirects to `/404`.
+   - Renders `AdminApp` layout (`src/pages/Admin/admin.app.jsx`) with sidebar and breadcrumbs only
+     for authorized admin sessions.
+
+5. Search Engine Directives (public/robots.txt & sitemap.xml):
+   - `public/robots.txt` disallows: `/auth/`, `/admin/`, `/auth/admin`.
+   - `public/sitemap.xml` indexes 16 primary consumer routes with priority and change frequencies.
+
+====================================================================================================
+3. QUICK REFERENCE MASTER MATRIX (39 ROUTES)
+====================================================================================================
+
+ROUTE PATH                     BROWSER HASH URL                     ACCESS LEVEL           ROBOTS.TXT    SITEMAP.XML  COMPONENT FILE
+----------------------------------------------------------------------------------------------------------------------------------------------------------------
+1.  /                          /#/                                  Public / Guest / User  Allowed       Yes (1.0)    src/pages/home/page.jsx
+2.  /search                    /#/search                            Public / Guest / User  Allowed       Yes (0.8)    src/pages/search/page.jsx
+3.  /product/:id               /#/product/:id                       Public / Guest / User  Allowed       Yes* (0.8)   src/pages/product/page.jsx
+4.  /categories                /#/categories                        Public / Guest / User  Allowed       No           src/pages/categories/categories.page.jsx
+5.  /about                     /#/about                             Public / Guest / User  Allowed       Yes (0.7)    src/pages/aboutUs/page.jsx
+6.  /contact                   /#/contact                           Public / Guest / User  Allowed       Yes (0.7)    src/pages/contactus/page.jsx
+7.  /shipping                  /#/shipping                          Public / Guest / User  Allowed       Yes (0.5)    src/pages/shippingInfo/page.jsx
+8.  /return                    /#/return                            Public / Guest / User  Allowed       Yes (0.5)    src/pages/return/page.jsx
+9.  /privacy                   /#/privacy                           Public / Guest / User  Allowed       Yes (0.4)    src/pages/privacy/page.jsx
+10. /terms                     /#/terms                             Public / Guest / User  Allowed       Yes (0.4)    src/pages/TermsAndConditions/TermsAndConditions.jsx
+11. /order-status              /#/order-status                      Public / Guest / User  Allowed       No           src/pages/order-status/page.jsx
+12. /order/status              /#/order/status                      Customer / User        Allowed       No           src/pages/order-status/page.jsx
+13. /login                     /#/login                             Public / Guest Only    Allowed       Yes (0.5)    src/pages/login/page.jsx
+14. /signup                    /#/signup                            Public / Guest Only    Allowed       Yes (0.5)    src/pages/signup/page.jsx
+15. /forgot-password           /#/forgot-password                   Public / Guest Only    Allowed       No           src/pages/forgot-password/page.jsx
+16. /redirect                  /#/redirect                          Public / OAuth Flow    Allowed       No           src/pages/redirect/gprovider.jsx
+17. /cart                      /#/cart                              Registered User Only   Allowed       Yes (0.6)    src/pages/cart/page.jsx
+18. /checkout                  /#/checkout                          Registered User Only   Allowed       No           src/pages/checkout/page.jsx
+19. /order                     /#/order                             Registered User Only   Allowed       Yes (0.6)    src/pages/orderhistory/Orderhistory.jsx
+20. /wishlist                  /#/wishlist                          Registered User Only   Allowed       Yes (0.6)    src/pages/wishlist/Wishlist.jsx
+21. /settings                  /#/settings                          Registered User Only   Allowed       Yes (0.4)    src/pages/settings/page.jsx
+22. /addressbook               /#/addressbook                       Registered User Only   Allowed       Yes (0.4)    src/pages/addressbook/page.jsx
+23. /support                   /#/support                           Registered User Only   Allowed       No           src/pages/support/page.jsx
+24. /payment-success           /#/payment-success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
+25. /payment/success           /#/payment/success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
+26. /404                       /#/404                               Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
+27. * (Wildcard)               /#/* (Any unmapped)                  Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
+28. /auth/admin                /#/auth/admin                        Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
+29. /auth/admin/dashboard      /#/auth/admin/dashboard              Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
+30. /auth/admin/products       /#/auth/admin/products               Administrator Only     Disallowed    No           src/pages/Admin/products/page.jsx
+31. /auth/admin/products/new   /#/auth/admin/products/new           Administrator Only     Disallowed    No           src/pages/Admin/products/pages/new/page.jsx
+32. /auth/admin/products/:id/edit /#/auth/admin/products/:id/edit   Administrator Only     Disallowed    No           src/pages/Admin/products/pages/edit/[id].jsx
+33. /auth/admin/orders         /#/auth/admin/orders                 Administrator Only     Disallowed    No           src/pages/Admin/orders/index.jsx
+34. /auth/admin/customers      /#/auth/admin/customers              Administrator Only     Disallowed    No           src/pages/Admin/customers/index.jsx
+35. /auth/admin/categories     /#/auth/admin/categories             Administrator Only     Disallowed    No           src/pages/Admin/categories/index.jsx
+36. /auth/admin/analytics      /#/auth/admin/analytics              Administrator Only     Disallowed    No           src/pages/Admin/analytics/index.jsx
+37. /auth/admin/payments       /#/auth/admin/payments               Administrator Only     Disallowed    No           src/pages/Admin/payments/index.jsx
+38. /auth/admin/support        /#/auth/admin/support                Administrator Only     Disallowed    No           src/pages/Admin/support/index.jsx
+39. /auth/admin/settings       /#/auth/admin/settings               Administrator Only     Disallowed    No           src/pages/Admin/settings/page.jsx
+
+* Note on Sitemap: In dist/sitemap.xml and public/sitemap.xml, product detail is listed as `/product` or `/#/product`.
+
+====================================================================================================
+4. COMPREHENSIVE ROUTE SPECIFICATIONS
+====================================================================================================
+
+----------------------------------------------------------------------------------------------------
+GROUP A: PUBLIC STOREFRONT & CATALOG PAGES
+----------------------------------------------------------------------------------------------------
+
+[ROUTE 01]
+- Path               : / (Index Route)
+- Browser URL        : https://razorbills.vercel.app/#/
+- Component          : src/pages/home/page.jsx
+- Section            : Public Storefront
+- Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
+- Who Can Access     : Unrestricted access for all visitors.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS. No authentication prompted.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer are fully visible.
+- Robots.txt Status  : Allowed (User-agent: * Allow: /)
+- Sitemap Status     : Included (Priority: 1.0, Changefreq: daily, Lastmod: 2026-07-29).
+- Page Details       : Main landing page for RazorBillz eCommerce store. Features promotional hero banners,
+                       category showcases, featured product carousels, limited-time offers, recommendation
+                       grids, service highlights (free delivery, secure payments), and brand trust metrics.
+
+[ROUTE 02]
+- Path               : /search
+- Browser URL        : https://razorbills.vercel.app/#/search
+- Component          : src/pages/search/page.jsx
+- Section            : Product Discovery & Catalog
+- Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
+- Who Can Access     : Unrestricted browsing and searching.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS. No authentication required.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.8, Changefreq: weekly, Lastmod: 2026-07-29).
+- Page Details       : Product search and discovery hub. Integrates full-text search query handling,
+                       dynamic multi-attribute filters (brand, category, price range, stock availability),
+                       sort options (price low-to-high, popularity, rating), grid/list layouts, and
+                       pagination controls driven by `useSearchStore`.
+
+[ROUTE 03]
+- Path               : /product/:id
+- Browser URL        : https://razorbills.vercel.app/#/product/:id (e.g. /#/product/PRD-101)
+- Component          : src/pages/product/page.jsx
+- Section            : Product Details Page (PDP)
+- Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
+- Who Can Access     : Full viewing access. "Add to Cart" or "Buy Now" triggers guest/user action flows.
+- Route Guard Rule   : Included via dynamic prefix check (`location.pathname.startsWith("/product/")`)
+                       and explicit `/product/:id` entry in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Base URL `/product` listed in sitemap with Priority: 0.8, Changefreq: weekly.
+- Page Details       : Comprehensive single-product presentation. Features image gallery/thumbnails,
+                       pricing, stock badge, discount indicators, product variants (colors/sizes),
+                       detailed specifications, feature bullet points, customer reviews & ratings,
+                       delivery estimator, and quick action buttons (Add to Cart, Buy Now, Share).
+
+[ROUTE 04]
+- Path               : /categories
+- Browser URL        : https://razorbills.vercel.app/#/categories
+- Component          : src/pages/categories/categories.page.jsx
+- Section            : Catalog Navigation
+- Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
+- Who Can Access     : Unrestricted browsing for all users.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS. No authentication required.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded (Not currently registered in sitemap.xml).
+- Page Details       : Complete taxonomy visual browser. Lists all primary merchandise categories and
+                       subcategories with banner cards, product counts, and direct links to filtered
+                       search results.
+
+----------------------------------------------------------------------------------------------------
+GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
+----------------------------------------------------------------------------------------------------
+
+[ROUTE 05]
+- Path               : /about
+- Browser URL        : https://razorbills.vercel.app/#/about
+- Component          : src/pages/aboutUs/page.jsx
+- Section            : Corporate & Informational
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted viewing.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.7, Changefreq: monthly).
+- Page Details       : RazorBillz company profile, mission statement, brand journey, founding philosophy,
+                       commitment to genuine electronics, customer satisfaction metrics, and brand values.
+
+[ROUTE 06]
+- Path               : /contact
+- Browser URL        : https://razorbills.vercel.app/#/contact
+- Component          : src/pages/contactus/page.jsx
+- Section            : Customer Support & Inquiry
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted. Any visitor can view contact details and submit inquiry form.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.7, Changefreq: monthly).
+- Page Details       : Contact details page featuring customer service email, telephone helpline, operating
+                       hours, physical office address, interactive contact submission form, and FAQ links.
+
+[ROUTE 07]
+- Path               : /shipping
+- Browser URL        : https://razorbills.vercel.app/#/shipping
+- Component          : src/pages/shippingInfo/page.jsx
+- Section            : Logistics & Delivery Information
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted viewing.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.5, Changefreq: monthly).
+- Page Details       : Detailed shipping terms, dispatch timelines, standard vs express delivery policies,
+                       courier partners (e.g. Shipmozo network), domestic delivery zones, and tracking rules.
+
+[ROUTE 08]
+- Path               : /return
+- Browser URL        : https://razorbills.vercel.app/#/return
+- Component          : src/pages/return/page.jsx
+- Section            : Legal & Customer Policy
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted viewing.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.5, Changefreq: monthly).
+- Page Details       : Return, replacement, and cancellation guidelines. Details 7-day return window,
+                       eligible product conditions, refund process timelines, reverse-pickup logistics,
+                       and non-returnable merchandise criteria.
+
+[ROUTE 09]
+- Path               : /privacy
+- Browser URL        : https://razorbills.vercel.app/#/privacy
+- Component          : src/pages/privacy/page.jsx
+- Section            : Legal & Compliance
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted viewing.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.4, Changefreq: monthly).
+- Page Details       : Privacy policy detailing user personal data collection, cookie usage, payment
+                       gateway encryption, data sharing practices with logistics partners, and user rights.
+
+[ROUTE 10]
+- Path               : /terms
+- Browser URL        : https://razorbills.vercel.app/#/terms
+- Component          : src/pages/TermsAndConditions/TermsAndConditions.jsx
+- Section            : Legal & Compliance
+- Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
+- Who Can Access     : Unrestricted viewing.
+- Route Guard Rule   : Included in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.4, Changefreq: monthly).
+- Page Details       : Terms and conditions of service. Covers contractual relationship, intellectual
+                       property rights, limitations of liability, pricing errors, dispute resolution,
+                       and governing jurisdiction.
+
+----------------------------------------------------------------------------------------------------
+GROUP C: AUTHENTICATION & IDENTITY FLOWS
+----------------------------------------------------------------------------------------------------
+
+[ROUTE 11]
+- Path               : /login
+- Browser URL        : https://razorbills.vercel.app/#/login
+- Component          : src/pages/login/page.jsx
+- Section            : Authentication
+- Who Can Visit      : Unauthenticated visitors, anonymous guests, or users switching accounts.
+- Who Can Access     : Unrestricted entry.
+- Route Guard Rule   : Listed in HIDE_CHROME_PATHS and GUEST_ACCESS_PATHS. App.jsx does not trigger
+                       login modal here.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer are HIDDEN (clean auth UI).
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.5, Changefreq: monthly).
+- Page Details       : Secure account sign-in interface. Offers Email/Password credentials login,
+                       Google One-Click OAuth sign-in, links to registration ("/signup") and
+                       password recovery ("/forgot-password").
+
+[ROUTE 12]
+- Path               : /signup
+- Browser URL        : https://razorbills.vercel.app/#/signup
+- Component          : src/pages/signup/page.jsx
+- Section            : User Registration
+- Who Can Visit      : New visitors, unauthenticated users, anonymous guests.
+- Who Can Access     : Unrestricted entry.
+- Route Guard Rule   : Listed in HIDE_CHROME_PATHS and GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer are HIDDEN.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.5, Changefreq: monthly).
+- Page Details       : New account registration screen. Form includes Name, Email, Password verification,
+                       terms acceptance checkbox, Google OAuth signup alternative, and link to "/login".
+
+[ROUTE 13]
+- Path               : /forgot-password
+- Browser URL        : https://razorbills.vercel.app/#/forgot-password
+- Component          : src/pages/forgot-password/page.jsx
+- Section            : Account Recovery
+- Who Can Visit      : Anyone needing password recovery.
+- Who Can Access     : Unrestricted entry.
+- Route Guard Rule   : Listed in HIDE_CHROME_PATHS and GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer are HIDDEN.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded (Not listed in sitemap.xml).
+- Page Details       : Account credential recovery. Accepts registered email address to dispatch password
+                       reset instructions and reset link tokens.
+
+[ROUTE 14]
+- Path               : /redirect
+- Browser URL        : https://razorbills.vercel.app/#/redirect
+- Component          : src/pages/redirect/gprovider.jsx
+- Section            : Authentication Callback Handler
+- Who Can Visit      : System/Browser during OAuth flow.
+- Who Can Access     : Transient access for users completing third-party OAuth (Google).
+- Route Guard Rule   : Unprotected intermediary handler.
+- Layout Chrome      : Standard layout with loading indicator and RazorBillz logo.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Google OAuth provider redirection intermediary. Renders a brand logo spinner with
+                       "Redirecting to Google..." while exchanging authentication tokens.
+
+----------------------------------------------------------------------------------------------------
+GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
+----------------------------------------------------------------------------------------------------
+
+[ROUTE 15]
+- Path               : /cart
+- Browser URL        : https://razorbills.vercel.app/#/cart
+- Component          : src/pages/cart/page.jsx
+- Section            : Customer Shopping Workflow
+- Who Can Visit      : Registered Customers (non-anonymous authenticated sessions).
+- Who Can Access     : Users with full authenticated accounts.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+                       * Unauthenticated visitors: Triggers "Authentication Required" prompt.
+                       * Anonymous guest sessions (`isAnonymous === true`): Automatically redirected to `/`.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.6, Changefreq: weekly).
+- Page Details       : Active shopping cart management page. Displays itemized product list, quantity
+                       increment/decrement, item deletion, live subtotal, promo code / coupon input,
+                       shipping fee estimate, price breakdown, and "Proceed to Checkout" button.
+
+[ROUTE 16]
+- Path               : /checkout
+- Browser URL        : https://razorbills.vercel.app/#/checkout
+- Component          : src/pages/checkout/page.jsx
+- Section            : Checkout & Order Placement Flow
+- Who Can Visit      : Registered Customers with items in cart.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS. Unauthenticated prompted; anonymous redirected to `/`.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded (Protected transaction step).
+- Page Details       : Multi-stage checkout process:
+                       Step 1: Address selection / new address creation with pin code serviceability check.
+                       Step 2: Payment method selection (Prepaid Razorpay vs Cash on Delivery).
+                       Step 3: Order placement with idempotency key, triggering Razorpay payment modal
+                               or COD order creation. Redirects to `/payment-success` on completion.
+
+[ROUTE 17]
+- Path               : /payment-success
+- Browser URL        : https://razorbills.vercel.app/#/payment-success
+- Component          : src/pages/payment-success/page.jsx
+- Section            : Post-Purchase Confirmation
+- Who Can Visit      : Registered Customers after placing an order.
+- Who Can Access     : Authenticated users carrying an `id` query parameter (e.g., `?id=ORD-12345`).
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Order completion receipt screen. Displays successful order confirmation badge,
+                       order ID, total payment sum, payment method badge (prepaid/COD), estimated delivery,
+                       items summary, retry button for failed transactions, and links to order tracking.
+
+[ROUTE 18]
+- Path               : /payment/success
+- Browser URL        : https://razorbills.vercel.app/#/payment/success
+- Component          : src/pages/payment-success/page.jsx
+- Section            : Post-Purchase Confirmation (Route Alias)
+- Who Can Visit      : Registered Customers.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Canonical alias pointing to `src/pages/payment-success/page.jsx` with identical
+                       features as `/payment-success`.
+
+[ROUTE 19]
+- Path               : /order-status
+- Browser URL        : https://razorbills.vercel.app/#/order-status
+- Component          : src/pages/order-status/page.jsx
+- Section            : Order Lookup & Tracking
+- Who Can Visit      : Anyone possessing a valid Order ID (e.g. ?id=ORD-XXXX).
+- Who Can Access     : Public guests and customers.
+- Route Guard Rule   : Explicitly included in GUEST_ACCESS_PATHS. No forced login required.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Public/Customer order tracking screen. Validates query parameter `?id=ORD-...`.
+                       Displays comprehensive order summary, fulfillment status, courier name, AWB
+                       tracking number, live tracking updates via Shipmozo API, payment status,
+                       retry payment button (if pending/failed), and return/cancellation status badges.
+
+[ROUTE 20]
+- Path               : /order/status
+- Browser URL        : https://razorbills.vercel.app/#/order/status
+- Component          : src/pages/order-status/page.jsx
+- Section            : Order Lookup & Tracking (Route Alias)
+- Who Can Visit      : Registered Customers (Note: this slash-variant is omitted from GUEST_ACCESS_PATHS).
+- Who Can Access     : Authenticated users with an order ID.
+- Route Guard Rule   : Since `/order/status` is not explicitly listed in GUEST_ACCESS_PATHS, unauthenticated
+                       visitors may receive the login prompt unless accessing via `/order-status`.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Route alias serving `src/pages/order-status/page.jsx`. Identical functionality to
+                       `/order-status`.
+
+[ROUTE 21]
+- Path               : /order
+- Browser URL        : https://razorbills.vercel.app/#/order
+- Component          : src/pages/orderhistory/Orderhistory.jsx
+- Section            : Customer Account
+- Who Can Visit      : Registered Customers only.
+- Who Can Access     : Authenticated users with active session.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS. Unauthenticated prompted; anonymous redirected to `/`.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.6, Changefreq: weekly).
+- Page Details       : Customer's personal order history dashboard. Lists all historic and active orders,
+                       order dates, statuses (placed, shipped, delivered, cancelled), invoice downloads,
+                       item lists, and direct buttons to track individual orders on `/order-status`.
+
+[ROUTE 22]
+- Path               : /wishlist
+- Browser URL        : https://razorbills.vercel.app/#/wishlist
+- Component          : src/pages/wishlist/Wishlist.jsx
+- Section            : Customer Account
+- Who Can Visit      : Registered Customers only.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.6, Changefreq: weekly).
+- Page Details       : Customer's saved items/favorites dashboard. Shows saved products, price changes,
+                       in-stock notifications, one-click "Move to Cart" actions, and bulk removal tools.
+
+[ROUTE 23]
+- Path               : /settings
+- Browser URL        : https://razorbills.vercel.app/#/settings
+- Component          : src/pages/settings/page.jsx
+- Section            : Customer Account
+- Who Can Visit      : Registered Customers only.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.4, Changefreq: monthly).
+- Page Details       : User profile settings. Allows updating display name, contact phone number,
+                       email address, avatar/profile image, changing account password, and setting
+                       marketing/order notification preferences.
+
+[ROUTE 24]
+- Path               : /addressbook
+- Browser URL        : https://razorbills.vercel.app/#/addressbook
+- Component          : src/pages/addressbook/page.jsx
+- Section            : Customer Account
+- Who Can Visit      : Registered Customers only.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Included (Priority: 0.4, Changefreq: monthly).
+- Page Details       : Saved delivery addresses management portal. Add, update, or remove shipping/billing
+                       addresses, validate postal PIN codes, tag addresses (Home, Work, Other), and set
+                       the primary default shipping destination for expedited checkout.
+
+[ROUTE 25]
+- Path               : /support
+- Browser URL        : https://razorbills.vercel.app/#/support
+- Component          : src/pages/support/page.jsx
+- Section            : Customer Care & Helpdesk
+- Who Can Visit      : Registered Customers only.
+- Who Can Access     : Authenticated users.
+- Route Guard Rule   : NOT in GUEST_ACCESS_PATHS. Requires authenticated user session.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Interactive customer care ticketing system. Users can raise new support tickets
+                       (categorized by Order, Payment, Delivery, Product question, Return, Refund, Other),
+                       link specific order IDs, engage in 2-way conversation threads with support staff,
+                       track ticket resolution statuses (open, in_progress, resolved, closed), and reopen
+                       tickets with follow-up messages.
+
+----------------------------------------------------------------------------------------------------
+GROUP E: UTILITY & ERROR FALLBACK PAGES
+----------------------------------------------------------------------------------------------------
+
+[ROUTE 26]
+- Path               : /404
+- Browser URL        : https://razorbills.vercel.app/#/404
+- Component          : src/pages/notfound/page.jsx
+- Section            : Error & Security Redirect Target
+- Who Can Visit      : Anyone.
+- Who Can Access     : Unrestricted. Also used as redirect destination when unauthorized users try
+                       accessing `/auth/admin/*`.
+- Route Guard Rule   : Unprotected fallback.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : 404 Page Not Found error screen with explanatory message and quick link back to
+                       the storefront homepage ("/").
+
+[ROUTE 27]
+- Path               : * (Wildcard Catch-all)
+- Browser URL        : https://razorbills.vercel.app/#/<any-undefined-route>
+- Component          : src/pages/notfound/page.jsx
+- Section            : Wildcard Router Fallback
+- Who Can Visit      : Anyone attempting to open an unmapped route.
+- Who Can Access     : Unrestricted.
+- Route Guard Rule   : Renders 404 screen for unmatched URL paths.
+- Layout Chrome      : Navbar, Mobile Bottom Nav, and Footer visible.
+- Robots.txt Status  : Allowed.
+- Sitemap Status     : Excluded.
+- Page Details       : Catches all 404 invalid URLs and displays the not found screen.
+
+----------------------------------------------------------------------------------------------------
+GROUP F: ADMINISTRATIVE BACKOFFICE PORTAL (/auth/admin/*)
+----------------------------------------------------------------------------------------------------
+
+ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
+- Parent Router Wrappers: `SessionLayout` -> `AdminAuth` (`src/pages/Admin/auth/page.index.jsx`)
+                          -> `AdminApp` (`src/pages/Admin/admin.app.jsx`).
+- Access Requirement   : User MUST have an active authenticated session with `role === "admin"`.
+- Unauthorized Handling: If not logged in, session error, or `role !== "admin"`, the application
+                         immediately redirects to `/404` (hides existence of admin endpoints).
+- Layout Chrome        : Replaces store navbar/footer with dedicated Admin layout:
+                         * Collapsible `AdminSidebar` (Main Navigation, Quick Actions, Admin Profile)
+                         * Top header with sidebar trigger and breadcrumbs
+                         * Full dark/light ThemeProvider integration
+- Robots.txt Directives: STRICTLY DISALLOWED via:
+                         `Disallow: /auth/`
+                         `Disallow: /admin/`
+                         `Disallow: /auth/admin`
+- Sitemap Directives   : STRICTLY EXCLUDED from sitemap.xml.
+
+[ROUTE 28]
+- Path               : /auth/admin (Admin Index)
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin
+- Component          : src/pages/Admin/dashboard/page.jsx
+- Section            : Administrative Backoffice
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins with full management privileges.
+- Page Details       : Default entry route for the admin portal. Renders the Admin Dashboard overview.
+
+[ROUTE 29]
+- Path               : /auth/admin/dashboard
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/dashboard
+- Component          : src/pages/Admin/dashboard/page.jsx
+- Section            : Administrative Dashboard
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Core management dashboard. Features key commerce statistics (Total Revenue,
+                       Order Count, Active Customers, Conversion Rates), recent sales chart, latest
+                       order activity feed, low-stock warnings, and quick shortcuts.
+
+[ROUTE 30]
+- Path               : /auth/admin/products
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products
+- Component          : src/pages/Admin/products/page.jsx
+- Section            : Product Catalog Administration
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Product inventory management center. View all catalog items in table/grid views,
+                       search by SKU or title, filter by category/stock status, view pricing, batch actions,
+                       edit product link, and product deletion dialog (`alert-delete.admin.jsx`).
+
+[ROUTE 31]
+- Path               : /auth/admin/products/new
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products/new
+- Component          : src/pages/Admin/products/pages/new/page.jsx
+- Section            : Product Creation
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Comprehensive new product creation wizard with modular form sections:
+                       * Basic Information (Title, brand, short description, category)
+                       * Pricing & Inventory (Price, discount price, SKU, stock quantity, barcode)
+                       * Images (Primary thumbnail, gallery uploads, image reordering)
+                       * Specifications & Features (Key features bullet list, tech specs key-values)
+                       * Dimensions & Weight (Package size, weight for shipping calculation)
+                       * Tags & Keywords (Search tags, SEO keywords)
+                       * Additional Information (Warranty, manufacturer details).
+
+[ROUTE 32]
+- Path               : /auth/admin/products/:id/edit
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products/:id/edit
+- Component          : src/pages/Admin/products/pages/edit/[id].jsx
+- Section            : Product Editor
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Product editor for existing catalog items identified by `:id`. Preloads all product
+                       data across sections (pricing, inventory, images, specifications, features,
+                       dimensions, tags) allowing atomic or bulk updates.
+
+[ROUTE 33]
+- Path               : /auth/admin/orders
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/orders
+- Component          : src/pages/Admin/orders/index.jsx
+- Section            : Order Fulfillment & Management
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Comprehensive order management operations. View all customer orders across the platform,
+                       filter by status (pending, confirmed, processing, shipped, delivered, cancelled),
+                       inspect customer delivery details, assign/sync AWB tracking numbers via Shipmozo,
+                       verify Razorpay/COD payment states, and manage return/cancellation requests.
+
+[ROUTE 34]
+- Path               : /auth/admin/customers
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/customers
+- Component          : src/pages/Admin/customers/index.jsx
+- Section            : Customer Relationship Management (CRM)
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Customer registry and directory. View registered customer profiles, encrypted
+                       user names, email addresses, registration dates, total order count, lifetime
+                       spend values, and individual customer order histories.
+
+[ROUTE 35]
+- Path               : /auth/admin/categories
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/categories
+- Component          : src/pages/Admin/categories/index.jsx
+- Section            : Category & Taxonomy Management
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Category hierarchy administration. Create new categories, edit category titles/slugs,
+                       upload category banner graphics, organize hierarchical relationships, and manage
+                       active category visibility on storefront menus.
+
+[ROUTE 36]
+- Path               : /auth/admin/analytics
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/analytics
+- Component          : src/pages/Admin/analytics/index.jsx
+- Section            : Business & Platform Analytics
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : In-depth metrics and data visualization engine. Displays verified-paid revenue
+                       trends, order volume charts with selectable time granularity (day, week, month),
+                       Average Order Value (AOV), payment method distribution (Prepaid vs COD), COD
+                       pending vs collected metrics, live traffic statistics (views, unique guests, unique users),
+                       and recent platform event audit log (latest 20 events).
+
+[ROUTE 37]
+- Path               : /auth/admin/payments
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/payments
+- Component          : src/pages/Admin/payments/index.jsx
+- Section            : Financial & Payment Auditing
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Financial ledger and transaction auditing. Logs all Razorpay transaction IDs,
+                       payment capture events, failed payment reports, COD reconciliation, and refund
+                       dispatches with timestamps and customer associations.
+
+[ROUTE 38]
+- Path               : /auth/admin/support
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/support
+- Component          : src/pages/Admin/support/index.jsx
+- Section            : Helpdesk Administration
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : Administrative helpdesk console. Centralized customer inquiry queue, ticket
+                       assignment, status toggles (open, pending, in_progress, resolved, closed),
+                       direct response messaging to customer tickets, and inquiry resolution history.
+
+[ROUTE 39]
+- Path               : /auth/admin/settings
+- Browser URL        : https://razorbills.vercel.app/#/auth/admin/settings
+- Component          : src/pages/Admin/settings/page.jsx
+- Section            : Store Configuration & System Settings
+- Who Can Visit      : Store Administrators only (`role: "admin"`).
+- Who Can Access     : Admins.
+- Page Details       : System configuration dashboard. Configure store metadata, contact details,
+                       payment gateway credentials (Razorpay API keys, webhooks), logistics settings
+                       (Shipmozo API configuration), tax rates, and administrative security preferences.
+
+====================================================================================================
+5. AUDIT OBSERVATIONS & ARCHITECTURAL RECOMMENDATIONS
+====================================================================================================
+
+1. Route Alias Discrepancy in GUEST_ACCESS_PATHS:
+   - In `src/App.jsx`, `/order-status` is included in `GUEST_ACCESS_PATHS`.
+   - The alias `/order/status` defined in `src/router/Router.jsx` is NOT listed in `GUEST_ACCESS_PATHS`.
+   - Recommendation: If guests need to access order tracking via `/order/status`, add `"/order/status"`
+     to `GUEST_ACCESS_PATHS` in `src/App.jsx`.
+
+2. Sitemap Consistency (Hash Routing vs Standard URLs):
+   - In `dist/sitemap.xml`, URLs are written without hash anchors:
+     `<loc>https://razorbills.vercel.app/search</loc>`
+   - In `public/sitemap.xml`, URLs are written with hash anchors:
+     `<loc>https://razorbills.vercel.app/#/search</loc>`
+   - Search engine crawlers (e.g. Googlebot) typically ignore fragment identifiers (#). If static
+     pre-rendering or HTML rewrites are used, standard path URLs without hashes are preferred for SEO.
+
+3. Missing Public Pages in Sitemap:
+   - The following public pages are currently omitted from `public/sitemap.xml`:
+     * `/categories` (High SEO discovery value)
+     * `/order-status`
+     * `/checkout` (Optionally keep excluded from indexing)
+     * `/support`
+     * `/forgot-password`
+   - Recommendation: Add `/categories` to `public/sitemap.xml` with priority 0.8 to improve catalog discovery.
+
+4. Admin Route Protection Integrity:
+   - Admin routes are protected on multiple layers:
+     * Layer 1: robots.txt disallows crawlers from `/auth/`, `/admin/`, and `/auth/admin`.
+     * Layer 2: Client-side guard `AdminAuth` checks session role and silently redirects unauthorized
+       visitors to `/404`.
+     * Layer 3: Backend API endpoints require valid JWT / session cookie with admin privileges.
+====================================================================================================
+[END OF PATHS.MAP.TXT]
+====================================================================================================

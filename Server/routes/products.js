@@ -49,10 +49,16 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
   let tags = req.query?.tags || req.body?.tags || "";
   let sortBy = req.query?.sortBy || req.body?.sortBy || "createdAt";
   let sortOrder = req.query?.sortOrder === "asc" ? 1 : -1;
-  let ratingMin =
-    parseFloat(req.query?.ratingMin) || parseFloat(req.body?.ratingMin) || 0;
+  // Rating bounds apply ONLY when explicitly requested. The old code always
+  // injected rating: {$gte: 0, $lte: 5}, which silently hides every product
+  // without a rating field from all listings and searches.
+  const ratingMinRaw = req.query?.ratingMin ?? req.body?.ratingMin;
+  const ratingMaxRaw = req.query?.ratingMax ?? req.body?.ratingMax;
+  let ratingMin = parseFloat(ratingMinRaw) || 0;
   let ratingMax =
-    parseFloat(req.query?.ratingMax) || parseFloat(req.body?.ratingMax) || 5;
+    ratingMaxRaw !== undefined && ratingMaxRaw !== null && ratingMaxRaw !== ""
+      ? parseFloat(ratingMaxRaw) || 5
+      : 5;
   let inStock =
     req.query?.inStock == "true" || req.body?.inStock == "true" || false;
 
@@ -74,8 +80,11 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
   query.isActive = true;
 
   if (search) {
-    // find in title, category, keywords, tags and description
+    // find in id, sku, brand, title, category, keywords, tags and description
     query.$or = [
+      { id: { $regex: search, $options: "i" } },
+      { sku: { $regex: search, $options: "i" } },
+      { brand: { $regex: search, $options: "i" } },
       { title: { $regex: search, $options: "i" } },
       { category: { $regex: search, $options: "i" } },
       { keywords: { $regex: search, $options: "i" } },
@@ -96,7 +105,9 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
     query.stock = { $gt: 0 };
   }
   query.price = { $gte: priceMin, $lte: priceMax };
-  query.rating = { $gte: ratingMin, $lte: ratingMax };
+  if (ratingMinRaw !== undefined || ratingMaxRaw !== undefined) {
+    query.rating = { $gte: ratingMin, $lte: ratingMax };
+  }
 
   // example: using full query to test URL
   // /api/products?search=electronics&category=electronics&priceMin=10&priceMax=100&keywords=wireless&tags=wireless,bluetooth&sortBy=price&sortOrder=asc&ratingMin=3&ratingMax=5&inStock=true
@@ -223,17 +234,30 @@ router.get("/:productid", requireSession, async function (req, res) {
   if (!product) {
     return res.status(404).json({ error: "Product not found" });
   }
+
+  // Expose the aggregate rating at the top level for storefront clients;
+  // the authoritative counters live in `metrics`.
+  const data =
+    typeof product.toObject === "function" ? product.toObject() : product;
+  const metrics = data.metrics ?? data.meterics ?? {};
+  const payload = {
+    ...data,
+    rating: Number(metrics.rating ?? data.rating ?? 0),
+    reviewCount: Number(metrics.reviewCount ?? data.reviewCount ?? 0),
+    commentCount: Number(metrics.commentCount ?? data.commentCount ?? 0),
+  };
+
   if (minimize === "true") {
-    const minimalProduct = new MinimalProduct(product);
+    const minimalProduct = new MinimalProduct(payload);
     return res.json(minimalProduct);
   }
-  res.json(product);
+  res.json(payload);
 });
 
 router.post(
   "/new/:productId",
   requireAdmin,
-  requirePermission("create"),
+  requirePermission({ products: ["create"] }),
   passUserAuth,
   async function (req, res) {
     const productId = req.params.productId;
@@ -251,8 +275,19 @@ router.post(
     }
 
     const newProduct = req.body;
-    newProduct.owner.id = adminId;
-    newProduct.owner.name = adminName;
+    console.log("<-- :New product data:", newProduct);
+    if (!newProduct.owner)
+      newProduct.owner = {
+        id: adminId,
+        name: adminName,
+      };
+    console.log(
+      "Creating new product with ID:",
+      productId,
+      "by admin:",
+      adminId,
+    );
+    console.log("--> :New product data:", newProduct);
 
     const created = await ProductModel.create(newProduct);
     evt.fire(
@@ -275,7 +310,7 @@ router.post(
 router.put(
   "/:productid",
   requireAdmin,
-  requirePermission("update"),
+  requirePermission({ products: ["update"] }),
   passUserAuth,
   async function (req, res) {
     const productid = req.params.productid;
@@ -301,24 +336,26 @@ router.put(
 router.delete(
   "/:productid",
   requireAdmin,
-  requirePermission("delete"),
+  requirePermission({ products: ["delete"] }),
   passUserAuth,
   async function (req, res) {
     const productid = req.params.productid;
     const deleted = await ProductModel.deleteOne({ id: productid });
-    evt.fire(
-      Evts.PRODUCT_DELETED,
-      new ProductEvent({
-        type: Evts.PRODUCT_DELETED,
-        product: deleted,
-        response: null,
-        isReq: true,
-        reqPath: req.url,
-        userId: req.user.id,
-        actorId: req.user.id,
-        productId: productid,
-      }),
-    );
+    if ((deleted?.deletedCount ?? 0) > 0) {
+      evt.fire(
+        Evts.PRODUCT_DELETED,
+        new ProductEvent({
+          type: Evts.PRODUCT_DELETED,
+          product: deleted,
+          response: null,
+          isReq: true,
+          reqPath: req.url,
+          userId: req.user.id,
+          actorId: req.user.id,
+          productId: productid,
+        }),
+      );
+    }
     res.json(deleted);
   },
 );

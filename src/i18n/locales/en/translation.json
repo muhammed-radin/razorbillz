@@ -60,7 +60,7 @@
     "logOutFailed": "Log-out failed: {{error}}"
   },
   "footer": {
-    "tagline": "Your one-stop shop for the latest and greatest electronics.",
+    "tagline": "Your one-stop shop for quality products across every category.",
     "quickLinks": "Quick Links",
     "customerSupport": "Customer Support",
     "companyInfo": "Company Info",
@@ -95,12 +95,12 @@
     "terms": "Terms",
     "shipping": "Shipping",
     "invalidEmail": "Enter a valid email",
-    "subscribed": "Subscribed! Welcome to Razorbills."
+    "subscribed": "Subscribed! Welcome to {{brand}}."
   },
   "home": {
-    "helmetTitle": "RazorBills - High-Quality Electronic Components",
-    "helmetDescription": "Your one-stop shop for the latest and greatest electronics. Industrial-grade electronic components for engineers, makers, startups, and institutions.",
-    "searchPlaceholder": "Search electronic components, boards, sensors...",
+    "helmetTitle": "Razorbillz - Your One-Stop Store for Everything",
+    "helmetDescription": "Shop quality products across categories with simple checkout, reliable delivery, and trusted support.",
+    "searchPlaceholder": "Search products, categories, or keywords...",
     "featuredCollection": "Featured Collection",
     "exploreCategories": "Explore Categories",
     "newArrivals": "New Arrivals",
@@ -112,10 +112,10 @@
     "requestProduct": "Request Product"
   },
   "search": {
-    "helmetTitle": "Search - RazorBills",
-    "helmetDescription": "Search for products, categories, or keywords on RazorBills. Find the perfect electronic components and gadgets.",
+    "helmetTitle": "Search - Razorbillz",
+    "helmetDescription": "Search for products, categories, or keywords on Razorbillz and find the right products for you.",
     "pageTitle": "Search Products",
-    "pageSubtitle": "Find the perfect electronic components and gadgets",
+    "pageSubtitle": "Find the right products for you",
     "inputPlaceholder": "Search products, categories, or keywords...",
     "searchButton": "Search",
     "filters": "Filters",
@@ -156,6 +156,8 @@
     "addToFavorites": "Add to favorites",
     "tags": "Tags:",
     "productDetails": "Product Details",
+    "video": "Video",
+    "playVideo": "Play video",
     "specifications": "Specifications",
     "techSpecs": "Technical specifications and details",
     "features": "Features",
@@ -167,6 +169,8 @@
     "writeReview": "Write a Review",
     "noCommentsTitle": "No Comments Yet",
     "noCommentsDesc": "Be the first to share your thoughts on this product.",
+    "noSimilarTitle": "No Similar Products Found",
+    "noSimilarDesc": "We couldn't find any other products from {{brand}} at the moment.",
     "reviewDrawerTitle": "Write a Product Review",
     "reviewDrawerDesc": "Share your experience with this component.",
     "submitReview": "Submit Review"
@@ -200,10 +204,12 @@
     "featureSupportDesc": "24/7 customer support available"
   },
   "auth": {
-    "loginTitle": "Log in to RazorBills",
-    "signupTitle": "Sign up for RazorBills",
+    "loginTitle": "Log in to Razorbillz",
+    "signupTitle": "Sign up for Razorbillz",
     "or": "OR",
     "continueWithGoogle": "Continue with Google",
+    "googleSignInFailed": "Google sign-in failed, Try again.",
+    "googleSignInSuccess": "Google sign-in successful",
     "fullName": "Full Name",
     "fullNamePlaceholder": "Your Full Name",
     "email": "Email",
@@ -258,7 +264,7 @@
   "categories": {
     "title": "Categories",
     "subtitle": "Browse our wide range of categories and find the perfect products for your needs.",
-    "helmetTitle": "Categories - RazorBills",
+    "helmetTitle": "Categories - Razorbillz",
     "helmetDescription": "Browse our wide range of categories and find the perfect products for your needs.",
     "noCategories": "No categories available.",
     "wishlistTitle": "Wishlists",
@@ -369,12 +375,12 @@
     "setDefault": "Set as Default"
   },
   "about": {
-    "helmetTitle": "About Us - RazorBills",
+    "helmetTitle": "About Us - Razorbillz",
     "title": "About Us",
-    "subtitle": "Industrial-grade electronic components for engineers, makers, startups, and institutions.",
+    "subtitle": "A trusted destination for quality products across categories.",
     "nationwide": "India · Nationwide Delivery",
     "ideaTitle": "Built on a Simple Idea",
-    "ideaSubtitle": "Make high-quality electronics components more",
+    "ideaSubtitle": "Make quality products more",
     "accessibleAffordable": "accessible and affordable",
     "ideaDesc": "We noticed that many buyers faced high prices, unnecessary complexity, and unreliable sourcing when purchasing electronic parts. Our goal is to change that by offering a straightforward and transparent shopping experience.",
     "qualityTitle": "Industrial-Grade Quality",
@@ -392,7 +398,7 @@
     "feature3Desc": "No unnecessary complications, just straight answers",
     "trustTitle": "Customer Trust Matters",
     "trustSubtitle": "We build relationships through reliability, transparency, and responsive support.",
-    "trustDesc": "Our support team is always available to assist you with your orders and questions. We're here to ensure your experience with Razorbills is smooth from start to finish.",
+    "trustDesc": "Our support team is always available to assist you with your orders and questions. We're here to ensure your experience with Razorbillz is smooth from start to finish.",
     "trustPoint1": "Return Options",
     "trustPoint1Sub": "Quality assurance guaranteed",
     "trustPoint2": "Secure UPI Payments",
@@ -401,14 +407,14 @@
     "trustPoint3Sub": "Cash on Delivery available on checkout",
     "trustPoint4": "Dedicated Support",
     "trustPoint4Sub": "Always available to assist",
-    "bannerTitle": "Supporting Innovation by Making Electronics Components Easier to Find, Easier to Buy, and Easier to Trust",
+    "bannerTitle": "Making Quality Products Easier to Find, Buy, and Trust",
     "bannerBadge": "BUILD WITH CONFIDENCE",
     "ctaTitle": "Ready to Build Your Next Project?",
-    "ctaDesc": "Thank you for choosing Razorbills.",
-    "ctaButton": "Explore Components"
+    "ctaDesc": "Thank you for choosing Razorbillz.",
+    "ctaButton": "Explore the Store"
   },
   "contact": {
-    "helmetTitle": "Contact Us - RazorBills",
+    "helmetTitle": "Contact Us - Razorbillz",
     "title": "Contact Us",
     "subtitle": "We're here to help with product questions, orders, and general inquiries.",
     "responseNote": "Our support team will respond as soon as possible.",
@@ -420,7 +426,7 @@
     "officeAddress": "Office Address",
     "serviceArea": "Service Area",
     "serviceAreaTitle": "India - Nationwide Delivery",
-    "serviceAreaDesc": "We deliver electronic components across all states in India",
+    "serviceAreaDesc": "We deliver products across all states in India",
     "formTitle": "Contact Form",
     "formDesc": "You can also contact us using the form. For faster support, please include your order ID (if applicable) and a brief description of your issue.",
     "formResponseTime": "We typically respond within 24 business hours.",
@@ -443,7 +449,7 @@
   },
   "shipping": {
     "title": "Shipping Information",
-    "subtitle": "We ship electronic components across India with reliable logistics partners to ensure safe and timely delivery.",
+    "subtitle": "We ship products across India with reliable logistics partners to ensure safe and timely delivery.",
     "coverageTitle": "Shipping Coverage",
     "coverageDesc": "We currently deliver nationwide across India",
     "dispatchTitle": "Order Processing & Dispatch",
@@ -486,7 +492,7 @@
     "trackingPoint2": "Updates from the courier partner until delivery",
     "trackingAdvice": "Customers are requested to track their shipment regularly and coordinate with the courier if required.",
     "safetyTitle": "Packaging & Safety",
-    "safetyDesc": "All components are packed securely to prevent damage during transit. Sensitive electronic parts are handled with appropriate protective packaging.",
+    "safetyDesc": "All products are packed securely to prevent damage during transit and handled with appropriate protective packaging.",
     "rtoTitle": "Undelivered / RTO Shipments",
     "rtoDesc": "If a shipment is returned to us (RTO – Return to Origin) due to customer unavailability, incorrect address, or COD refusal:",
     "rtoThen1": "Re-shipping will be done only after additional shipping charges are paid",
@@ -497,7 +503,7 @@
   },
   "return": {
     "title": "Returns & Refund Policy",
-    "subtitle": "We aim to provide high-quality electronic components and a transparent buying experience. Please read the return and refund policy carefully before placing an order.",
+    "subtitle": "We aim to provide quality products and a transparent buying experience. Please read the return and refund policy carefully before placing an order.",
     "eligibilityTitle": "Return Eligibility",
     "eligibilityDesc": "Returns are accepted only under the following conditions:",
     "eligibility1": "The product received is damaged, defective, or incorrect",
@@ -507,12 +513,12 @@
     "eligibilityWarning": "Products that have been used, installed, soldered, altered, or physically damaged after delivery are not eligible for return.",
     "nonReturnableTitle": "Non-Returnable Items",
     "nonReturnableDesc": "The following items are not eligible for return or refund:",
-    "nonReturnable1": "Used or soldered electronic components",
+    "nonReturnable1": "Used products that do not meet our return conditions",
     "nonReturnable2": "Items damaged due to improper handling or installation",
     "nonReturnable3": "Clearance or discounted products (if mentioned at purchase)",
     "nonReturnable4": "Products returned without prior approval",
     "howToRequest": "How to Request a Return",
-    "step1": "Contact us at support@razorbills.com",
+    "step1": "Contact us at {{email}}",
     "step2": "Share your order ID, product details, and clear images or videos of the issue",
     "step3": "Our team will review the request and respond within 2 business days",
     "approvalNote": "Returns must be approved before shipping the product back.",
@@ -536,7 +542,7 @@
   "terms": {
     "title": "Terms & Conditions",
     "lastUpdated": "Last updated",
-    "welcome": "Welcome to RazorBills. By accessing or using our website, you agree to be bound by these Terms and Conditions.",
+    "welcome": "Welcome to Razorbillz. By accessing or using our website, you agree to be bound by these Terms and Conditions.",
     "sections": {
       "useOfWebsite": {
         "title": "Use of Website",
@@ -544,7 +550,7 @@
       },
       "productsAndInformation": {
         "title": " Products & Information",
-        "content": "We make every effort to ensure that product descriptions, pricing, and availability are accurate. However, errors may occur. Razorbills reserves the right to correct any errors or update information without prior notice."
+        "content": "We make every effort to ensure that product descriptions, pricing, and availability are accurate. However, errors may occur. Razorbillz reserves the right to correct any errors or update information without prior notice."
       },
       "ordersAndPayments": {
         "title": " Orders & Payments",
@@ -556,7 +562,7 @@
       },
       "shippingAndDelivery": {
         "title": " Shipping & Delivery",
-        "content": "Delivery timelines may vary depending on location and product availability. Razorbills is not responsible for delays caused by logistics partners or unforeseen circumstances."
+        "content": "Delivery timelines may vary depending on location and product availability. Razorbillz is not responsible for delays caused by logistics partners or unforeseen circumstances."
       },
       "returnsAndRefunds": {
         "title": " Returns & Refunds",
@@ -564,11 +570,11 @@
       },
       "intellectualProperty": {
         "title": " Intellectual Property",
-        "content": "All content on this website, including text, logos, images, and design, is the property of Razorbills and may not be copied or used without permission."
+        "content": "All content on this website, including text, logos, images, and design, is the property of Razorbillz and may not be copied or used without permission."
       },
       "limitationOfLiability": {
         "title": " Limitation of Liability",
-        "content": "Razorbills shall not be liable for any indirect, incidental, or consequential damages arising from the use of our website or products."
+        "content": "Razorbillz shall not be liable for any indirect, incidental, or consequential damages arising from the use of our website or products."
       },
       "changesToTerms": {
         "title": " Changes to Terms",
@@ -581,7 +587,7 @@
     },
     "importantNotice": {
       "title": "Important Notice",
-      "content": "By continuing to use Razorbills, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions. If you do not agree with any part of these terms, please discontinue use of our website immediately."
+      "content": "By continuing to use Razorbillz, you acknowledge that you have read, understood, and agree to be bound by these Terms & Conditions. If you do not agree with any part of these terms, please discontinue use of our website immediately."
     },
     "questions": {
       "title": "Questions About Our Terms?",
@@ -598,7 +604,7 @@
     "title": "Privacy Policy",
     "lastUpdated": "Last updated:",
     "introTitle": "Introduction",
-    "introText": "At RazorBills, we are committed to protecting your privacy and ensuring the security of your personal information. This Privacy Policy explains how we collect, use, protect, and share your information when you use our e-commerce platform for electronics and electronic components.",
+    "introText": "At Razorbillz, we are committed to protecting your privacy and ensuring the security of your personal information. This Privacy Policy explains how we collect, use, protect, and share your information when you use our e-commerce platform.",
     "collectTitle": "Information We Collect",
     "personalInfoTitle": "Personal Information",
     "personalInfo1": "Name, email address, and phone number",
@@ -660,17 +666,17 @@
     "retentionTitle": "Data Retention",
     "retentionDesc": "We retain your personal information only for as long as necessary to fulfill the purposes outlined in this policy, comply with legal obligations, resolve disputes, and enforce our agreements. Account information is typically retained while your account is active and for a reasonable period thereafter for legal and business purposes.",
     "childrenTitle": "Children's Privacy",
-    "childrenDesc": "RazorBills is not intended for children under 13 years of age. We do not knowingly collect personal information from children under 13. If you are a parent or guardian and believe your child has provided us with personal information, please contact us immediately, and we will delete such information from our systems.",
+    "childrenDesc": "Razorbillz is not intended for children under 13 years of age. We do not knowingly collect personal information from children under 13. If you are a parent or guardian and believe your child has provided us with personal information, please contact us immediately, and we will delete such information from our systems.",
     "transfersTitle": "International Data Transfers",
     "transfersDesc": "Your information may be transferred to and processed in countries other than your country of residence. These countries may have different data protection laws. When we transfer your information internationally, we ensure appropriate safeguards are in place to protect your privacy and comply with applicable data protection laws.",
     "updatesTitle": "Policy Updates",
     "updatesDesc": "We may update this Privacy Policy from time to time to reflect changes in our practices or applicable laws. We will notify you of any material changes by posting the updated policy on our website and updating the \"Last updated\" date. Your continued use of our services after such changes constitutes your acceptance of the updated policy.",
     "contactTitle": "Contact Us",
     "contactDesc": "If you have any questions, concerns, or requests regarding this Privacy Policy or our data practices, please contact us:",
-    "team": "RazorBills Privacy Team",
-    "email": "Email: privacy@razorbills.com",
+    "team": "Razorbillz Privacy Team",
+    "email": "Email: {{email}}",
     "commitment": "We are committed to resolving any privacy-related concerns promptly and transparently.",
-    "footerNote": "© {{year}} RazorBills. Your privacy is our priority."
+    "footerNote": "© {{year}} Razorbillz. Your privacy is our priority."
   },
   "paymentSuccess": {
     "title": "Payment Successful",
@@ -736,7 +742,79 @@
     "estimatedDelivery": "Estimated Delivery",
     "shippingAddress": "Shipping Address",
     "backToOrders": "Back to Orders",
-    "continueShopping": "Continue Shopping"
+    "continueShopping": "Continue Shopping",
+    "statuses": {
+      "pending": "Pending Payment",
+      "confirmed": "Confirmed",
+      "processing": "Processing",
+      "shipped": "Shipped",
+      "delivered": "Delivered",
+      "cancelled": "Cancelled",
+      "return_requested": "Return Requested",
+      "returned": "Returned"
+    },
+    "paymentStatuses": {
+      "pending": "Pending",
+      "paid": "Paid",
+      "failed": "Failed",
+      "refund_pending": "Refund Pending",
+      "partially_refunded": "Partially Refunded",
+      "refunded": "Refunded"
+    },
+    "noOrderTitle": "No order selected",
+    "noOrderDesc": "Open an order from your order history to track its status.",
+    "invalidTitle": "That order link looks invalid",
+    "invalidDesc": "The order reference in this link isn't in the expected format. Open an order from your history instead.",
+    "forbiddenTitle": "This order belongs to another account",
+    "notFoundTitle": "Order not found",
+    "forbiddenDesc": "You don't have permission to view this order.",
+    "notFoundDesc": "We couldn't find this order, or you don't have access to it.",
+    "retry": "Retry",
+    "myOrders": "My orders",
+    "print": "Print",
+    "payment": "Payment",
+    "cod": "Cash on Delivery",
+    "prepaid": "Razorpay (prepaid)",
+    "cancelledNotice": "This order was cancelled. No further action is required.",
+    "itemCount_one": "{{count}} item",
+    "itemCount_other": "{{count}} items",
+    "discount": "Discount",
+    "tax": "Tax",
+    "codFee": "COD fee",
+    "recentFirst": "Most recent updates first",
+    "noUpdates": "No status updates recorded yet.",
+    "showLess": "Show less",
+    "showAllUpdates": "Show all {{total}} updates",
+    "method": "Method",
+    "collection": "Collection",
+    "amountPaid": "Amount paid",
+    "paymentId": "Payment ID",
+    "openingRazorpay": "Opening Razorpay…",
+    "retryPayment": "Retry payment",
+    "service": "Service",
+    "notAssigned": "Not assigned",
+    "syncing": "Syncing…",
+    "refresh": "Refresh",
+    "track": "Track",
+    "noTracking": "No tracking yet",
+    "trackingUnavailable": "Live tracking unavailable — courier not configured.",
+    "requests": "Requests",
+    "cancellation": "Cancellation",
+    "return": "Return",
+    "refund": "Refund",
+    "reason": "Reason: {{reason}}",
+    "amount": "Amount: {{amount}}",
+    "requestedAt": "Requested {{date}}",
+    "secureNote": "Payments are processed securely. Server-validated totals on every order.",
+    "copy": "Copy",
+    "copied": "Copied!",
+    "copyFailed": "Couldn't copy to clipboard",
+    "paymentVerified": "Payment verified.",
+    "verificationFailed": "Verification failed.",
+    "paymentWindowClosed": "Payment window closed. Order saved — retry anytime.",
+    "retryStartFailed": "Could not start payment retry.",
+    "trackingSyncFailed": "Tracking sync failed",
+    "update": "Update"
   },
   "adminSettings": {
     "title": "Admin Settings",
@@ -759,11 +837,11 @@
   },
   "homepage": {
     "hero": {
-      "badge": "Kerala's own electronics store",
+      "badge": "Kerala's own mixed store",
       "titleA": "Everything",
-      "titleB": "electronic.",
+      "titleB": "everything.",
       "titleC": "Delivered fast.",
-      "subtitle": "From development boards and sensors to phones, laptops and audio — Razorbills brings trusted, genuine tech to makers, students and families across Kerala.",
+      "subtitle": "From everyday essentials to trusted tech, Razorbillz brings quality products to makers, students and families across Kerala.",
       "searchPlaceholder": "Search products, brands, categories…",
       "shopTrending": "Shop trending now",
       "browseCategories": "Browse categories",
@@ -815,7 +893,7 @@
       "freeDelivery": "Free express delivery in Kerala"
     },
     "why": {
-      "eyebrow": "Why Razorbills",
+      "eyebrow": "Why Razorbillz",
       "title": "Tech shopping, minus the trust issues",
       "description": "We combine a local store's accountability with the speed of a modern platform.",
       "fastTitle": "Fast dispatch",

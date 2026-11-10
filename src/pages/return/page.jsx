@@ -12,9 +12,11 @@ import {
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { useStoreInfo } from "@/utils/store";
 
 export default function Returns() {
   const { t } = useTranslation();
+  const store = useStoreInfo();
 
   const returnEligibility = [
     t("return.eligibility1"),
@@ -33,7 +35,7 @@ export default function Returns() {
   const returnSteps = [
     {
       number: "1",
-      text: t("return.step1"),
+      text: t("return.step1", { email: store.emailSupport }),
     },
     {
       number: "2",
@@ -304,10 +306,10 @@ export default function Returns() {
             <div className="flex items-center justify-center gap-2 mb-6">
               <Mail className="w-5 h-5 text-amber-600" />
               <a
-                href="mailto:support@razorbills.com"
+                href={`mailto:${store.emailSupport}`}
                 className="text-lg font-semibold text-amber-600 hover:text-amber-700"
               >
-                support@razorbills.com
+                {store.emailSupport}
               </a>
             </div>
             <p className="text-neutral-700 dark:text-gray-300">

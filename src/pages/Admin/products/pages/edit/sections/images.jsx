@@ -28,6 +28,7 @@ import {
   AttachmentTitle,
 } from "@/components/ui/attachment";
 import { Preloader } from "@/components/LoaderScreen";
+import ProductVideosSection from "@/pages/Admin/products/components/product-videos-section";
 
 export default function ImagesSection({
   thumbnail,
@@ -41,12 +42,17 @@ export default function ImagesSection({
   handleAdditionalImageFileChange,
   additionalImageInputRef,
   addAdditionalImageUrl,
+  videos,
+  setVideos,
 }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Images</CardTitle>
-        <CardDescription>Add product images (upload or URL)</CardDescription>
+        <CardTitle>Resources</CardTitle>
+        <CardDescription>
+          Add product images and videos (upload or URL). Files upload when you
+          save the product.
+        </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Thumbnail */}
@@ -209,6 +215,14 @@ export default function ImagesSection({
               Add URL
             </Button>
           </div>
+        </div>
+
+        {/* Videos */}
+        <div className="border-t pt-6">
+          <ProductVideosSection
+            videos={videos || []}
+            onChange={setVideos}
+          />
         </div>
       </CardContent>
     </Card>

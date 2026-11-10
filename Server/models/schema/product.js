@@ -1,6 +1,19 @@
 import mongoose, { Schema } from "mongoose";
 import { productStatusCache } from "../../utils/cache-utils/product-status.js";
 
+/** Video metadata stored on a product (the file itself lives on Cloudinary). */
+const VideoSchema = new Schema(
+  {
+    url: { type: String, required: true },
+    poster: { type: String, default: "" },
+    duration: { type: Number, default: 0 },
+    width: { type: Number, default: 0 },
+    height: { type: Number, default: 0 },
+    size: { type: Number, default: 0 },
+  },
+  { _id: false },
+);
+
 export const ProductSchema = new Schema(
   {
     id: { type: String, required: true, unique: true },
@@ -27,6 +40,7 @@ export const ProductSchema = new Schema(
     },
     features: { type: [String], default: [] },
     images: { type: [String], default: [] },
+    videos: { type: [VideoSchema], default: [] },
     dimensions: {
       width: { type: Number, default: 0 },
       height: { type: Number, default: 0 },
@@ -51,6 +65,8 @@ export const ProductSchema = new Schema(
 
     metrics: {
       allViews: { type: Number, default: 0 },
+      guestViews: { type: Number, default: 0 },
+      authenticatedViews: { type: Number, default: 0 },
       debouncedViews: { type: Number, default: 0 },
       stars: {
         n1: { type: Number, default: 0 },
@@ -98,6 +114,7 @@ export class MinimalProduct {
     tags,
     category,
     stock,
+    metrics,
     meterics,
     owner,
   } = {}) {
@@ -120,6 +137,7 @@ export class MinimalProduct {
             tags,
             category,
             stock,
+            metrics,
             meterics,
             owner,
           };
@@ -140,7 +158,9 @@ export class MinimalProduct {
     this.tags = product.tags;
     this.category = product.category;
     this.stock = product.stock;
-    this.meterics = product.meterics;
+    this.metrics = product.metrics ?? product.meterics ?? null;
+    // Legacy alias: older clients and cached feeds read `meterics`.
+    this.meterics = this.metrics;
     this.owner = product.owner;
   }
 }

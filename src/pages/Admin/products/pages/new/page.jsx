@@ -5,7 +5,6 @@ import { ArrowLeft, Plus, Save, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { api } from "@/utils/api";
-import axios from "axios";
 import { toast } from "sonner";
 import {
   Accordion,
@@ -22,18 +21,22 @@ import FeaturesSection from "./sections/features";
 import DimensionsWeightSection from "./sections/dimensions-weight";
 import TagsKeywordsSection from "./sections/tags-keywords";
 import AdditionalInformationSection from "./sections/additional-information";
-import { productSchema } from "@/utils/product_zod";
+import { productSchema } from "@shared/utils/product_zod";
+import ProductImportDialog from "@/pages/Admin/products/components/product-import-dialog";
+import UploadTraceDialog from "@/pages/Admin/products/components/upload-trace-dialog";
+import {
+  buildUploadSteps,
+  buildVideosPayload,
+  uploadProductResources,
+  videoItemFromDocument,
+} from "@/utils/product-upload";
 
 const defaultCategories = [];
 
-// Cloudinary configuration - update these with your credentials
-const CLOUDINARY_UPLOAD_PRESET = "thumbs"; // Replace with your upload preset
-const CLOUDINARY_CLOUD_NAME = "drv6qpv56";
-const CLOUDINARY_UPLOAD_URL = `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`;
-
 const PRODUCT_IMAGES_DB = "productImagesDB";
-const PRODUCT_IMAGES_DB_VERSION = 2;
+const PRODUCT_IMAGES_DB_VERSION = 3;
 const PRODUCT_IMAGES_STORE = "images";
+const PRODUCT_VIDEOS_STORE = "videos";
 
 function openImagesDB() {
   return new Promise((resolve, reject) => {
@@ -44,18 +47,24 @@ function openImagesDB() {
 
     request.onupgradeneeded = (event) => {
       const db = event.target.result;
-      if (!db.objectStoreNames.contains(PRODUCT_IMAGES_STORE)) {
-        db.createObjectStore(PRODUCT_IMAGES_STORE, {
-          keyPath: "id",
-          autoIncrement: true,
-        });
-      }
+      [PRODUCT_IMAGES_STORE, PRODUCT_VIDEOS_STORE].forEach((storeName) => {
+        if (!db.objectStoreNames.contains(storeName)) {
+          db.createObjectStore(storeName, {
+            keyPath: "id",
+            autoIncrement: true,
+          });
+        }
+      });
     };
 
     request.onsuccess = (event) => {
       const db = event.target.result;
 
-      if (!db.objectStoreNames.contains(PRODUCT_IMAGES_STORE)) {
+      const missingStores = [PRODUCT_IMAGES_STORE, PRODUCT_VIDEOS_STORE].filter(
+        (storeName) => !db.objectStoreNames.contains(storeName),
+      );
+
+      if (missingStores.length) {
         db.close();
         indexedDB.deleteDatabase(PRODUCT_IMAGES_DB);
 
@@ -66,12 +75,14 @@ function openImagesDB() {
 
         recreate.onupgradeneeded = (e) => {
           const recreatedDb = e.target.result;
-          if (!recreatedDb.objectStoreNames.contains(PRODUCT_IMAGES_STORE)) {
-            recreatedDb.createObjectStore(PRODUCT_IMAGES_STORE, {
-              keyPath: "id",
-              autoIncrement: true,
-            });
-          }
+          [PRODUCT_IMAGES_STORE, PRODUCT_VIDEOS_STORE].forEach((storeName) => {
+            if (!recreatedDb.objectStoreNames.contains(storeName)) {
+              recreatedDb.createObjectStore(storeName, {
+                keyPath: "id",
+                autoIncrement: true,
+              });
+            }
+          });
         };
 
         recreate.onsuccess = (e) => resolve(e.target.result);
@@ -89,7 +100,6 @@ function openImagesDB() {
 export default function NewProductPage() {
   const navigate = useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
   const [specifications, setSpecifications] = useState([
     { label: "", value: "" },
   ]);
@@ -107,6 +117,11 @@ export default function NewProductPage() {
     isThumbnail: true,
   });
   const [additionalImages, setAdditionalImages] = useState([]);
+  // Videos are only *staged* here (File + local preview). Transcoding and
+  // uploading happen on submit, one item at a time, with a live trace dialog.
+  const [videos, setVideos] = useState([]);
+  const [uploadTrace, setUploadTrace] = useState([]);
+  const [traceOpen, setTraceOpen] = useState(false);
 
   async function saveImages() {
     const saveData = { data: [thumbnail, ...additionalImages], id: 0 };
@@ -178,6 +193,121 @@ export default function NewProductPage() {
     }
   }, [thumbnail, additionalImages]);
 
+  // Video drafts: a selected File stays in IndexedDB until it has been uploaded
+  // (then only the URL is kept); pasted URLs are stored as-is.
+  function serializeVideo(video) {
+    return {
+      id: video.id,
+      name: video.name,
+      source: video.source || "upload",
+      url: video.url || "",
+      poster: video.poster || "",
+      duration: video.duration || 0,
+      width: video.width || 0,
+      height: video.height || 0,
+      size: video.size || 0,
+      encodedSize: video.encodedSize || 0,
+      file: video.url ? null : video.file || null,
+    };
+  }
+
+  async function saveVideos() {
+    if (videos.length === 0) return;
+
+    try {
+      const db = await openImagesDB();
+      const transaction = db.transaction(PRODUCT_VIDEOS_STORE, "readwrite");
+      transaction
+        .objectStore(PRODUCT_VIDEOS_STORE)
+        .put({ id: 0, data: videos.map(serializeVideo) });
+    } catch (error) {
+      console.error("IndexedDB video save error:", error);
+      toast.warning("Failed to save videos to DB");
+    }
+  }
+
+  async function loadVideos() {
+    try {
+      const db = await openImagesDB();
+      const transaction = db.transaction(PRODUCT_VIDEOS_STORE, "readonly");
+      const request = transaction.objectStore(PRODUCT_VIDEOS_STORE).getAll();
+
+      request.onsuccess = (event) => {
+        const saved = event.target.result[0]?.data || [];
+
+        if (saved.length) {
+          setVideos(
+            saved.map((video) => ({
+              ...video,
+              objectUrl: video.file ? URL.createObjectURL(video.file) : "",
+              status: video.url
+                ? "uploaded"
+                : video.file
+                  ? "ready"
+                  : "draft",
+              stage: video.url ? "done" : "reading",
+              progress: video.url ? 1 : 0,
+              error: "",
+            })),
+          );
+        }
+        draftLoadedRef.current = true;
+      };
+    } catch (error) {
+      console.error("IndexedDB video load error:", error);
+      draftLoadedRef.current = true;
+      toast.warning("Failed to load videos from DB");
+    }
+  }
+
+  async function clearVideos() {
+    try {
+      const db = await openImagesDB();
+      const transaction = db.transaction(PRODUCT_VIDEOS_STORE, "readwrite");
+      transaction.objectStore(PRODUCT_VIDEOS_STORE).clear();
+    } catch (error) {
+      console.error("IndexedDB video clear error:", error);
+    }
+  }
+
+  const firstVideoLoadRef = useRef(true);
+  const draftLoadedRef = useRef(false);
+
+  useEffect(() => {
+    if (firstVideoLoadRef.current) {
+      firstVideoLoadRef.current = false;
+      loadVideos();
+    }
+  }, []);
+
+  /* Save drafts only when the sources change (add/remove/url), not on progress
+   * ticks — otherwise a large File would be cloned into IndexedDB repeatedly. */
+  const videoDraftKey = videos
+    .map((video) =>
+      [
+        video.id,
+        video.url,
+        video.name,
+        video.poster,
+        video.duration,
+        video.file?.name,
+        video.file?.size,
+        video.file?.lastModified,
+      ].join("~"),
+    )
+    .join("|");
+
+  useEffect(() => {
+    if (!videoDraftKey) {
+      if (draftLoadedRef.current) clearVideos();
+      return;
+    }
+
+    const timer = setTimeout(() => saveVideos(), 500);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [videoDraftKey]);
+
   // Category combobox states
   const [categories, setCategories] = useState(defaultCategories);
   const [categoryOpen, setCategoryOpen] = useState(false);
@@ -247,6 +377,10 @@ export default function NewProductPage() {
       setKeywords(savedValues.keywords);
       isLoadedFromLocalStorageRef.current = true;
     }
+    // Close the hydration gate after the first pass: otherwise a draft saved
+    // by this very effect (e.g. the initial blank rows) would be re-read and
+    // clobber the first real import/edits made by the user.
+    isLoadedFromLocalStorageRef.current = true;
 
     if (
       specifications.length > 0 ||
@@ -423,45 +557,6 @@ export default function NewProductPage() {
     setAdditionalImages(updated);
   };
 
-  // Upload image to Cloudinary
-  const uploadToCloudinary = (file) => {
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
-    return new Promise((resolve, reject) => {
-      toast.promise(
-        () =>
-          new Promise((resolveui, rejectui) => {
-            const xhr = new XMLHttpRequest();
-            xhr.open("POST", CLOUDINARY_UPLOAD_URL);
-            xhr.upload.onprogress = (e) => {
-              const progress = Math.round((e.loaded / e.total) * 100);
-              setUploadProgress(progress);
-            };
-            xhr.onload = () => {
-              if (xhr.status === 200) {
-                resolveui("Image uploaded successfully:" + file?.name);
-                resolve(JSON.parse(xhr.response).secure_url);
-              } else {
-                rejectui(new Error("Cloudinary upload failed"));
-                reject(new Error("Cloudinary upload failed"));
-              }
-            };
-            xhr.onerror = () => {
-              rejectui(new Error("Cloudinary upload failed"));
-              reject(new Error("Cloudinary upload failed"));
-            };
-            xhr.send(formData);
-          }),
-        {
-          loading: "Uploading image...",
-          success: "Image uploaded successfully",
-          error: "Error uploading image",
-        },
-      );
-    });
-  };
-
   // Add new category
   const addNewCategory = async (newCategory) => {
     if (newCategory && !categories.includes(newCategory)) {
@@ -486,47 +581,188 @@ export default function NewProductPage() {
     return validatedData.success;
   };
 
+  /* --- Document import (full-product .md/.json) ---------------------- */
+  /* see docs/PRODUCT_MD_FORMAT.md — validated by the shared zod schema   */
+  const applyProductImport = ({
+    formValues,
+    specifications: importedSpecs,
+    features: importedFeatures,
+    tags: importedTags,
+    keywords: importedKeywords,
+    images: importedImages,
+    thumbnail: importedThumbnail,
+    videos: importedVideos = [],
+  }) => {
+    form.reset({
+      ...form.getValues(),
+      ...formValues,
+    });
+    setSpecifications(
+      importedSpecs.length
+        ? [...importedSpecs, { label: "", value: "" }]
+        : [{ label: "", value: "" }],
+    );
+    setFeatures(importedFeatures.length ? [...importedFeatures, ""] : [""]);
+    setTags(importedTags);
+    setKeywords(importedKeywords);
+    if (importedThumbnail) {
+      handleThumbnailUrlChange(importedThumbnail);
+    }
+    if (importedImages.length) {
+      setAdditionalImages(
+        importedImages.map((url) => ({
+          url,
+          file: null,
+          preview: url,
+          meta: { name: "Imported", size: 0, type: "" },
+        })),
+      );
+    }
+    if (importedVideos.length) {
+      setVideos(
+        importedVideos
+          .map((video, index) => videoItemFromDocument(video, index))
+          .filter(Boolean),
+      );
+    }
+  };
+
+  const importHandler = {
+    specifications: (items, mode) =>
+      setSpecifications(
+        mode === "append"
+          ? [...specifications.filter((s) => s.label || s.value), ...items]
+          : [...items, { label: "", value: "" }],
+      ),
+    features: (items, mode) =>
+      setFeatures(
+        mode === "append"
+          ? [...features.filter((f) => f.trim() !== ""), ...items]
+          : [...items, ""],
+      ),
+  };
+
+  /* --- Deferred uploads with a live trace ---------------------------- */
+  const updateTraceStep = (id, values) =>
+    setUploadTrace((prev) =>
+      prev.map((step) => (step.id === id ? { ...step, ...values } : step)),
+    );
+
+  /**
+   * Upload every staged file (thumbnail, additional images, videos) one at a
+   * time. Returns the URLs/results so the submit handler can build the payload
+   * without waiting for React state to settle.
+   */
+  const runUploads = async () => {
+    const steps = buildUploadSteps({
+      thumbnail,
+      images: additionalImages,
+      videos,
+    });
+
+    setUploadTrace(
+      steps.map((step) => ({
+        ...step,
+        status: "pending",
+        stage: "starting",
+        progress: 0,
+        error: "",
+      })),
+    );
+
+    if (!steps.length) {
+      return {
+        ok: true,
+        thumbnailUrl: thumbnail.url,
+        images: new Map(),
+        videos: new Map(),
+      };
+    }
+
+    setTraceOpen(true);
+
+    return uploadProductResources(steps, {
+      onStep: updateTraceStep,
+      onThumbnail: (url) => {
+        if (thumbnail.preview?.startsWith("blob:")) {
+          URL.revokeObjectURL(thumbnail.preview);
+        }
+        setThumbnail({
+          url,
+          file: null,
+          preview: url,
+          status: "uploaded",
+          isThumbnail: true,
+        });
+      },
+      onImage: (index, url) => {
+        setAdditionalImages((prev) =>
+          prev.map((image, imageIndex) =>
+            imageIndex === index
+              ? { url, file: null, preview: url, meta: image.meta }
+              : image,
+          ),
+        );
+      },
+      onVideo: (videoId, video) => {
+        setVideos((prev) =>
+          prev.map((item) =>
+            item.id === videoId
+              ? {
+                  ...item,
+                  url: video.url,
+                  poster: video.poster || item.poster,
+                  duration: video.duration || item.duration,
+                  width: video.width || item.width,
+                  height: video.height || item.height,
+                  source: "upload",
+                  encodedSize: video.size || item.encodedSize,
+                  status: "uploaded",
+                  stage: "done",
+                  progress: 1,
+                }
+              : item,
+          ),
+        );
+      },
+    });
+  };
+
   const onSubmit = async (data) => {
+    if (videos.some((video) => video.status === "reading")) {
+      toast.warning("Wait for the video details to finish loading.");
+      return;
+    }
+    if (videos.some((video) => video.status === "error")) {
+      toast.warning("Remove the failed videos before saving.");
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
-      // Upload thumbnail if it's a file
-      let thumbnailUrl = thumbnail.url;
-      if (thumbnail.file && thumbnail.url === "") {
-        thumbnailUrl = await uploadToCloudinary(thumbnail.file);
-        URL.revokeObjectURL(thumbnail.preview);
-        thumbnail.preview = thumbnailUrl;
-        thumbnail.file = null;
-        thumbnail.url = thumbnailUrl;
-        setThumbnail({
-          ...thumbnail,
-          url: thumbnailUrl,
-        });
+      const uploads = await runUploads();
+
+      if (!uploads.ok) {
+        toast.error(uploads.error?.message || "Resource upload failed.");
+        return;
       }
 
-      // Upload additional images
-      const imageUrls = await Promise.all(
-        additionalImages.map(async (img, index) => {
-          if (img.file && img.url === "") {
-            let uploadedUrl = await uploadToCloudinary(img.file);
-            URL.revokeObjectURL(img.preview);
-            img.preview = uploadedUrl;
-            img.file = null;
-            img.url = uploadedUrl;
-            updateAdditionalImageUrl(index, uploadedUrl, true);
-
-            return uploadedUrl;
-          }
-          return img.url;
-        }),
-      );
+      const thumbnailUrl = uploads.thumbnailUrl || thumbnail.url;
+      const imageUrls = additionalImages
+        .map(
+          (image, index) =>
+            image.url || uploads.images.get(`image-${index}`) || "",
+        )
+        .filter((url) => url && url.trim() !== "");
 
       const productData = {
         ...data,
         thumbnail: thumbnailUrl,
         specifications: specifications.filter((s) => s.label && s.value),
         features: features.filter((f) => f.trim() !== ""),
-        images: imageUrls.filter((i) => i && i.trim() !== ""),
+        images: imageUrls,
+        videos: buildVideosPayload(videos, uploads.videos),
         tags: tags,
         keywords: keywords,
         dimensions: {
@@ -544,7 +780,6 @@ export default function NewProductPage() {
       };
 
       if (!validateData(productData)) {
-        setIsSubmitting(false);
         return;
       }
 
@@ -553,8 +788,31 @@ export default function NewProductPage() {
       delete productData.height;
       delete productData.depth;
 
-      await api.client
-        .post(
+      // Final trace line: the upload screen stays open until the product is
+      // actually stored, so a save failure is visible in the same place.
+      const saveStepId = "save-product";
+      const markSaveStep = (values) =>
+        setUploadTrace((prev) =>
+          prev.map((step) =>
+            step.id === saveStepId ? { ...step, ...values } : step,
+          ),
+        );
+      setUploadTrace((prev) => [
+        ...prev.filter((step) => step.id !== saveStepId),
+        {
+          id: saveStepId,
+          kind: "save",
+          label: "Product details",
+          status: "running",
+          stage: "saving",
+          progress: 0,
+          error: "",
+        },
+      ]);
+      setTraceOpen(true);
+
+      try {
+        const response = await api.client.post(
           api.products(
             "new/" +
               (form.getValues("id") ||
@@ -562,25 +820,29 @@ export default function NewProductPage() {
                 Math.floor(Math.random() * 1000000)),
           ),
           productData,
-        )
-        .then((response) => {
-          if (response.status === 200) {
-            toast.success("Product created successfully!");
-            localStorage.removeItem("newProductForm");
-            clearLocalStorage();
-            clearImages();
-            setIsSubmitting(false);
-            navigate("/auth/admin/products");
-          } else {
-            toast.error(response.data.message || "Failed to create product");
-          }
-        })
-        .catch((error) => {
-          toast.error(
-            error.response?.data?.message || "Failed to create product",
-          );
-          console.error("Error creating product:", error);
-        });
+        );
+
+        if (response.status === 200 || response.status === 201) {
+          markSaveStep({ status: "done", stage: "saved", progress: 1 });
+          toast.success("Product created successfully!");
+          localStorage.removeItem("newProductForm");
+          clearLocalStorage();
+          clearImages();
+          clearVideos();
+          setTraceOpen(false);
+          navigate("/auth/admin/products");
+        } else {
+          const message = response.data?.message || "Failed to create product";
+          markSaveStep({ status: "error", stage: "error", error: message });
+          toast.error(message);
+        }
+      } catch (error) {
+        const message =
+          error.response?.data?.message || "Failed to create product";
+        markSaveStep({ status: "error", stage: "error", error: message });
+        toast.error(message);
+        console.error("Error creating product:", error);
+      }
     } catch (error) {
       console.error("Error creating product:", error);
       toast.error(error.response?.data?.message || "Failed to create product");
@@ -605,7 +867,17 @@ export default function NewProductPage() {
             Add a new product to your inventory
           </p>
         </div>
+        <div className="ml-auto">
+          <ProductImportDialog onApply={applyProductImport} />
+        </div>
       </div>
+
+      <UploadTraceDialog
+        open={traceOpen}
+        steps={uploadTrace}
+        running={isSubmitting}
+        onClose={() => setTraceOpen(false)}
+      />
 
       <Form {...form}>
         <form
@@ -641,9 +913,9 @@ export default function NewProductPage() {
               </AccordionContent>
             </AccordionItem>
 
-            {/* Images */}
-            <AccordionItem value="Images">
-              <AccordionTrigger>Images</AccordionTrigger>
+            {/* Images + videos */}
+            <AccordionItem value="Resources">
+              <AccordionTrigger>Resources</AccordionTrigger>
               <AccordionContent>
                 <ImagesSection
                   thumbnail={thumbnail}
@@ -659,6 +931,8 @@ export default function NewProductPage() {
                   }
                   additionalImageInputRef={additionalImageInputRef}
                   addAdditionalImageUrl={addAdditionalImageUrl}
+                  videos={videos}
+                  setVideos={setVideos}
                 />
               </AccordionContent>
             </AccordionItem>
@@ -672,6 +946,7 @@ export default function NewProductPage() {
                   updateSpecification={updateSpecification}
                   removeSpecification={removeSpecification}
                   addSpecification={addSpecification}
+                  onImport={importHandler.specifications}
                 />
               </AccordionContent>
             </AccordionItem>
@@ -685,6 +960,7 @@ export default function NewProductPage() {
                   updateFeature={updateFeature}
                   removeFeature={removeFeature}
                   addFeature={addFeature}
+                  onImport={importHandler.features}
                 />
               </AccordionContent>
             </AccordionItem>

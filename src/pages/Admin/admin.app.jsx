@@ -30,7 +30,7 @@ function AdminApp() {
         <AdminSidebar
           variant="sidebar"
           collapsible="none"
-          className="h-screen"
+          className="h-screen border-r border-sidebar-border"
           savePageInfo={setCurrentPageInfo}
         />
         <SidebarInset className="flex flex-col relative overflow-auto h-screen max-sm:h-[calc(100dvh-4rem)]">

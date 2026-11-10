@@ -8,28 +8,28 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination";
-import { useNavigate } from "react-router-dom";
 import { memo } from "react";
 
 export default memo(function PaginationWithPrimaryButton({
   className,
   currentPage,
+  // Preferred: plain page number (stable identity keeps memo effective).
+  page,
   totalPages,
   onPageChange,
   ...props
 }) {
-  const navigate = useNavigate();
-
   const currentPageNumber = Math.min(
-    Math.max(parseInt(currentPage?.get("page")) || 1, 1),
+    Math.max(
+      parseInt(
+        page ?? (typeof currentPage?.get === "function" ? currentPage.get("page") : currentPage),
+      ) || 1,
+      1,
+    ),
     totalPages,
   );
   const previousPage = Math.max(currentPageNumber - 1, 1);
   const nextPage = Math.min(currentPageNumber + 1, totalPages);
-
-  console.warn(
-    "TODO: Remove this auto upadation each time parent changes, in search page",
-  );
 
   return (
     <Pagination className={cn("w-full", className)} {...props}>
