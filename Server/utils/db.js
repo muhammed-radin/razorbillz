@@ -24,9 +24,7 @@ async function openConnection() {
   }
 
   // Mongoose manages the MongoDB connection.
-  await mongoose.connect(uri, {
-    dbName: DATABASE_NAME,
-  });
+  await mongoose.connect(uri);
 
   // Reuse Mongoose's underlying native MongoDB client.
   mongoClient = mongoose.connection.getClient();
