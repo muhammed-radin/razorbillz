@@ -10,7 +10,7 @@ export const Logo = React.memo(({ className = "", ...props }) => {
       <div className="flex flex-row justify-center items-center">
         <img
           src="/logo.svg"
-          alt="RazorBills Logo"
+          alt={`${store.name} Logo`}
           className={`w-12 h-12 sm:w-8 sm:h-8 mr-2 ${className}`}
           {...props}
         />

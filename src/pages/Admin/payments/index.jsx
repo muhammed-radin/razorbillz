@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { toast } from "sonner";
 import { Truck, RefreshCw, DollarSign, PackageX, PackageCheck, Undo2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ordersApi, paymentsApi, shipmentsApi } from "@/services/shop";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 const inr = (n) => `₹${Number(n ?? 0).toFixed(2)}`;
 
@@ -40,7 +41,7 @@ export default function AdminPaymentsPage() {
   const [loadError, setLoadError] = useState(null);
   const [busyId, setBusyId] = useState(null);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     load();
   }, []);
 
@@ -115,9 +116,7 @@ export default function AdminPaymentsPage() {
   };
   const approveReturn = (o) => run(o.id, "Return approved", () => ordersApi.approveReturn(o.id));
   const completeRefund = (o) =>
-    run(o.id, "Refund completed", () =>
-      ordersApi.completeRefund(o.id, `ADMIN-${Date.now()}`),
-    );
+    run(o.id, "Refund completed", () => ordersApi.completeRefund(o.id));
 
   const orders = queues[tab] ?? [];
 

@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { BarChart3, Calendar, RefreshCw, DollarSign, TrendingUp, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -39,9 +40,8 @@ export default function AdminAnalyticsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     load(granularity);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const load = async (gran = granularity) => {

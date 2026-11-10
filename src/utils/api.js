@@ -95,12 +95,12 @@ const api = {
     return userData;
   },
   alreadyTryingToGetSession: false,
+  sessionPromise: null,
   async waitForSession(
     retryIntervalMs = 300,
     timeoutEnabled = false,
     timeoutMs = 5000,
   ) {
-    let self = this;
     return new Promise((resolve) => {
       // If already trying to get session, wait for a short period and retry
       let MAX_WAIT_TIME_MS = timeoutMs; // Maximum wait time of 5 seconds
@@ -121,74 +121,70 @@ const api = {
     });
   },
   async getSession() {
-    let self = this;
-
-    // 1. If already trying to get session, wait for it to be available
-    if (self.alreadyTryingToGetSession === true) {
-      await self.waitForSession();
-    }
-
-    // 2. Try to get session from cache first
+    // 1. Cache-first: an already-decrypted session is reused until the
+    //    cache is explicitly cleared (logout / refresh).
     try {
       const raw = sessionStorage.getItem("session");
-      if (!raw) {
-        throw new Error("No cached session found");
+      if (raw) {
+        const session = JSON.parse(decrypt(raw));
+        if (session) return { ...session };
       }
-      const session = JSON.parse(decrypt(raw));
-      if (!session) {
-        throw new Error("Invalid cached session");
-      }
-      return { ...session };
-    } catch (error) {
+    } catch {
       // Corrupt cache: fall through to a live fetch.
-      // continue to fetch session from server
     }
 
-    // 3. Fetch session from server if not found in cache
-    try {
-      self.alreadyTryingToGetSession = true;
-      let live = await authClient.getSession();
-      self.alreadyTryingToGetSession = false;
+    // 2. Coalesce concurrent bootstrap calls (App + provider + guards)
+    //    onto ONE live request. Without this, an unguarded StrictMode
+    //    mount fired /get-session two or three times.
+    if (this.sessionPromise) return this.sessionPromise;
 
-      // Names are end-to-end encrypted at rest: present them decrypted to
-      // every consumer (navbar, sidebar, greetings). Build a fresh wrapper
-      // (never mutate the auth client's internal state) and cache that, so
-      // cached and live sessions share one decrypted shape.
-      const session = live;
-
-      if (session && session.data && session.data.user) {
-        if (session.data.user.name) {
-          session.data.user.name = decryptField(session.data.user.name);
-        }
-        if (session.data.user.profilePicture) {
-          session.data.user.profilePicture = decryptField(
-            session.data.user.profilePicture,
-          );
-        }
-        if (session.data.user.image) {
-          session.data.user.image = decryptField(session.data.user.image);
-        }
+    const promise = (async () => {
+      this.alreadyTryingToGetSession = true;
+      let live;
+      try {
+        live = await authClient.getSession();
+      } catch {
+        sessionStorage.removeItem("session");
+        return {
+          data: null,
+          fromCache: false,
+          error: new Error("Failed to retrieve session from server"),
+        };
+      } finally {
+        this.alreadyTryingToGetSession = false;
       }
 
-      // 4. Cache the session in sessionStorage for future use
+      // Build a fresh wrapper (never mutate the auth client's internal
+      // state), then decrypt E2EE-at-rest profile fields.
+      let session = live;
+      if (live?.data?.user) {
+        const user = { ...live.data.user };
+        if (user.name) user.name = decryptField(user.name);
+        if (user.profilePicture) {
+          user.profilePicture = decryptField(user.profilePicture);
+        }
+        if (user.image) user.image = decryptField(user.image);
+        session = { ...live, data: { ...live.data, user } };
+      }
+
+      // 3. Cache the decrypted session for future callers.
       try {
         sessionStorage.setItem(
           "session",
           encrypt(JSON.stringify({ ...session, fromCache: true })),
         );
-        return { ...session, fromCache: false }; // Add fromCache property to indicate it's a live fetch
+        return { ...session, fromCache: false };
       } catch {
         // Storage full/blocked: session still returned live.
         return { ...session, fromCache: false };
       }
-    } catch {
-      // Corrupt cache: fall through to a live fetch.
-      sessionStorage.removeItem("session"); // Clear cache if session is invalid. it helps to avoid caching invalid sessions.
-      return {
-        data: null,
-        fromCache: false,
-        error: new Error("Failed to retrieve session from server"),
-      };
+    })();
+
+    this.sessionPromise = promise;
+    try {
+      return await promise;
+    } finally {
+      if (this.sessionPromise === promise) this.sessionPromise = null;
     }
   },
   clearSessionCache() {
@@ -227,9 +223,41 @@ const api = {
       api.clearSessionCache();
       sessionStorage.clear();
       api.alreadyTryingToGetSession = false;
+      api.sessionPromise = null;
       return authClient.signOut();
     },
   },
+};
+
+/* =========================================================
+ * GET request coalescing.
+ *
+ * Pages frequently fire the same read from a mount effect, a store
+ * action and a component both rendering at once (made worse by
+ * StrictMode). Sharing the in-flight promise removes those duplicate
+ * round-trips at the lowest layer, so direct `api.client.get(...)`
+ * call sites are covered too. Only identical url + params requests
+ * share; caller-managed AbortSignals opt out because aborting one
+ * consumer would cancel the shared request for all of them.
+ * ========================================================= */
+const inflightGets = new Map();
+const axiosGet = api.client.get.bind(api.client);
+
+api.client.get = function dedupedGet(url, config = {}) {
+  if (config?.signal) return axiosGet(url, config);
+
+  const key = `${url}::${config?.responseType ?? "json"}::${JSON.stringify(
+    config.params ?? {},
+  )}`;
+  const existing = inflightGets.get(key);
+  if (existing) return existing;
+
+  const request = axiosGet(url, config).finally(() => {
+    if (inflightGets.get(key) === request) inflightGets.delete(key);
+  });
+
+  inflightGets.set(key, request);
+  return request;
 };
 
 export { api };

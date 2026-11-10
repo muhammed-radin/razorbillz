@@ -94,8 +94,8 @@ export const ordersApi = {
   completeReturn: (id) => post(`/api/orders/${id}/return/complete`),
   requestRefund: (id, amount, reason) =>
     post(`/api/orders/${id}/refund`, { amount, reason }),
-  completeRefund: (id, transactionId) =>
-    post(`/api/orders/${id}/refund/complete`, { transactionId }),
+  completeRefund: (id, transactionId, options = {}) =>
+    post(`/api/orders/${id}/refund/complete`, { transactionId, ...options }),
   patchShipping: (id, shipment) =>
     patch(`/api/orders/${id}/shipping`, shipment),
   patchEta: (id, estimatedDate) =>
@@ -209,7 +209,7 @@ export const supportApi = {
   get: (id) => get(`/api/support/${id}`),
   message: (id, message) => post(`/api/support/${id}/messages`, { message }),
   list: (params) => get("/api/support", { params }),
-  reply: (id, message) => post(`/api/support/${id}/messages`, { message }),
+  reply: (id, message) => post(`/api/support/${id}/reply`, { message }),
   setStatus: (id, status, note) =>
     patch(`/api/support/${id}/status`, { status, note }),
   assign: (id, adminId) => patch(`/api/support/${id}/assign`, { adminId }),

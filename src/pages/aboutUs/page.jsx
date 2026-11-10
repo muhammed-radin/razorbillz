@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
-export default function RazorbillsAbout() {
+export default function RazorbillzAbout() {
   const [hoveredCard, setHoveredCard] = useState(null);
   const { t } = useTranslation();
   const store = useStoreInfo();
@@ -22,8 +22,8 @@ export default function RazorbillsAbout() {
     <div className="min-h-screen bg-white text-neutral-900 dark:bg-black/10 dark:text-gray-100">
       <StoreMeta
         title={t("about.title")}
-        description={`Learn about ${store.name}, our mission to provide industrial-grade electronic components for engineers, makers, startups, and institutions with a focus on accessibility and affordability.`}
-        keywords={`about us, ${store.name}, electronics, components, mission, vision, industrial-grade`}
+        description={`Learn about ${store.name}, our mission to provide quality products across categories with a focus on accessibility and affordability.`}
+        keywords={`about us, ${store.name}, products, shopping, mission, vision, quality`}
       />
       {/* Header*/}
       <div className="relative overflow-hidden border-b dark:border-neutral-700">

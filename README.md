@@ -1,37 +1,34 @@
-# RazorBillz 🛒⚡
+# Razorbillz 🛒⚡
 
-**Your one-stop shop for the latest and greatest electronics.**
+**Your one-stop shop for quality products across every category.**
 
-RazorBillz is a modern, responsive e-commerce platform specializing in
-electronic components and gadgets. Built with cutting-edge web technologies, it
-provides a seamless shopping experience for electronics enthusiasts, hobbyists,
-and professionals.
+Razorbillz is a modern, responsive e-commerce platform offering quality
+products across categories. Built with cutting-edge web technologies, it
+provides a seamless shopping experience for families, makers, and professionals.
 
-![RazorBillz Homepage](https://github.com/user-attachments/assets/30a793b0-d4ee-41ef-bb94-95a9285c74b2)
+![Razorbillz Homepage](https://github.com/user-attachments/assets/30a793b0-d4ee-41ef-bb94-95a9285c74b2)
 
 ## 📸 Screenshots
 
 ### Login Page
 
-![RazorBillz Login](https://github.com/user-attachments/assets/05422abb-664e-4fb3-8160-933aca673254)
+![Razorbillz Login](https://github.com/user-attachments/assets/05422abb-664e-4fb3-8160-933aca673254)
 
 ### Sign Up Page
 
-![RazorBillz Sign Up](https://github.com/user-attachments/assets/d4a0f21c-3296-4089-828b-2443b53e4deb)
+![Razorbillz Sign Up](https://github.com/user-attachments/assets/d4a0f21c-3296-4089-828b-2443b53e4deb)
 
 ## 🚀 Features
 
-- **🔍 Smart Search**: Advanced search functionality to find electronics quickly
+- **🔍 Smart Search**: Advanced search functionality to find products quickly
 - **📱 Responsive Design**: Optimized for desktop, tablet, and mobile devices
-- **🏷️ Category Filtering**: Browse by component types (Resistors, LEDs,
-  Transistors, etc.)
+- **🏷️ Category Filtering**: Browse the complete catalogue by category
 - **🛒 Shopping Cart**: Add products to cart and manage orders
 - **👤 User Authentication**: Sign up and sign in functionality
 - **🎨 Modern UI**: Clean, intuitive interface with smooth animations
 - **⚡ Fast Performance**: Built with Vite for lightning-fast development and
   builds
-- **📦 Product Catalog**: Comprehensive listing of electronic components with
-  detailed information
+- **📦 Product Catalog**: Comprehensive listings with detailed product information
 
 ## 🛠️ Technology Stack
 
@@ -120,7 +117,7 @@ razorbills/
 
 ## 🎯 Product Categories
 
-RazorBillz offers a comprehensive range of electronic components:
+Razorbillz offers a comprehensive range of products across categories:
 
 - **Resistors** - Various resistance values and types
 - **Diodes** - Standard, Zener, and LED diodes
@@ -138,7 +135,7 @@ RazorBillz offers a comprehensive range of electronic components:
 
 ## 🤝 Contributing
 
-We welcome contributions to RazorBillz! Here's how you can help:
+We welcome contributions to Razorbillz! Here's how you can help:
 
 1. **Fork the repository**
 2. **Create a feature branch** (`git checkout -b feature/amazing-feature`)

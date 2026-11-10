@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { StoreMeta } from "@/components/store-meta";
+import { useStoreInfo } from "@/utils/store";
 import { ArrowLeft, CheckCircle2, Shield, Zap, Sparkles, KeyRound } from "lucide-react";
 
 /**
@@ -17,9 +18,10 @@ export function AuthLayout({
   type = "login",
   children,
 }) {
+  const store = useStoreInfo();
   const showcaseConfig = {
     login: {
-      tag: "Smarter Electronics Shopping",
+      tag: "Smarter Shopping",
       icon: Sparkles,
       title: "Welcome back to your tech sanctuary.",
       description:
@@ -46,7 +48,7 @@ export function AuthLayout({
       ],
     },
     signup: {
-      tag: "Join RazorBillz Club",
+      tag: `Join ${store.name} Club`,
       icon: Sparkles,
       title: "Everything you need, engineered for precision.",
       description:
@@ -125,15 +127,15 @@ export function AuthLayout({
             <Link
               to="/"
               className="group flex items-center gap-2.5 transition-opacity hover:opacity-85"
-              title="Return to RazorBillz Home"
+              title={`Return to ${store.name} Home`}
             >
               <img
                 src="/logo.svg"
-                alt="RazorBillz"
+                alt={store.name}
                 className="w-7 h-7 object-contain"
               />
               <span className="font-semibold text-base tracking-tight text-white font-[Bakbak_One]">
-                RazorBillz
+                {store.name}
               </span>
             </Link>
 
@@ -193,7 +195,7 @@ export function AuthLayout({
 
           {/* Bottom Footer Info */}
           <div className="relative z-10 pt-4 border-t border-border/30 flex items-center justify-between text-xs text-zinc-500">
-            <span>© {new Date().getFullYear()} RazorBillz</span>
+            <span>© {new Date().getFullYear()} {store.name}</span>
             <span>256-bit SSL Encrypted</span>
           </div>
         </aside>
@@ -224,11 +226,11 @@ export function AuthLayout({
               <Link to="/" className="flex items-center gap-1.5">
                 <img
                   src="/logo.svg"
-                  alt="RazorBillz"
+                  alt={store.name}
                   className="w-5 h-5 object-contain"
                 />
                 <span className="font-bold text-xs tracking-tight font-[Bakbak_One]">
-                  RazorBillz
+                  {store.name}
                 </span>
               </Link>
             </div>
@@ -257,11 +259,11 @@ export function AuthLayout({
             <div className="flex items-center justify-center gap-1.5 text-[11px] text-muted-foreground">
               <CheckCircle2 className="w-3 h-3 text-emerald-600 dark:text-emerald-400" />
               <span>
-                Encrypted with 256-bit SSL • Official RazorBillz Portal
+                Encrypted with 256-bit SSL • Official {store.name} Portal
               </span>
             </div>
             <p className="text-[10px] sm:text-[11px] text-muted-foreground/80 leading-tight">
-              By continuing, you agree to RazorBillz’s{" "}
+              By continuing, you agree to {store.name}’s{" "}
               <Link to="/terms" className="underline hover:text-foreground">
                 Terms of Service
               </Link>{" "}

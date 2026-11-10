@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { Link } from "react-router-dom";
 import {
   Card,
@@ -47,6 +47,7 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import AvatarIcon from "@/components/avatar-icon";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 export const description = "Admin dashboard with live store metrics";
 
@@ -178,15 +179,40 @@ export default function AdminDashboardPage() {
         })(),
         (async () => {
           try {
+            /* One paginated read feeds both the recent-order list and the
+             * top-products aggregate. Previously the dashboard requested
+             * /orders/list twice (limit 5 and limit 100). */
             const data = await ordersApi.list({
-              limit: 5,
+              limit: 100,
               sortBy: "createdAt",
               sortOrder: "desc",
             });
             const list = data?.orders ?? (Array.isArray(data) ? data : []);
-            setLiveOrders(Array.isArray(list) ? list : []);
+            const orders = Array.isArray(list) ? list : [];
+            setLiveOrders(orders.slice(0, 5));
+
+            const agg = new Map();
+            for (const o of orders) {
+              if (o?.status === "cancelled") continue;
+              const paid = o?.payment?.status === "paid";
+              for (const p of o?.products ?? []) {
+                const key = p?.productId ?? p?.title ?? "unknown";
+                const cur = agg.get(key) ?? {
+                  name: p?.title ?? "Unknown product",
+                  sales: 0,
+                  revenue: 0,
+                };
+                cur.sales += Number(p?.quantity ?? 1);
+                if (paid) cur.revenue += Number(p?.price ?? 0) * Number(p?.quantity ?? 1);
+                agg.set(key, cur);
+              }
+            }
+            setTopProducts(
+              [...agg.values()].sort((a, b) => b.sales - a.sales).slice(0, 4),
+            );
           } catch (err) {
             fail("orders", err);
+            fail("top", err);
           }
         })(),
         (async () => {
@@ -222,33 +248,6 @@ export default function AdminDashboardPage() {
             fail("traffic", err);
           }
         })(),
-        (async () => {
-          try {
-            const data = await ordersApi.list({ limit: 100 });
-            const list = data?.orders ?? (Array.isArray(data) ? data : []);
-            const agg = new Map();
-            for (const o of Array.isArray(list) ? list : []) {
-              if (o?.status === "cancelled") continue;
-              const paid = o?.payment?.status === "paid";
-              for (const p of o?.products ?? []) {
-                const key = p?.productId ?? p?.title ?? "unknown";
-                const cur = agg.get(key) ?? {
-                  name: p?.title ?? "Unknown product",
-                  sales: 0,
-                  revenue: 0,
-                };
-                cur.sales += Number(p?.quantity ?? 1);
-                if (paid) cur.revenue += Number(p?.price ?? 0) * Number(p?.quantity ?? 1);
-                agg.set(key, cur);
-              }
-            }
-            setTopProducts(
-              [...agg.values()].sort((a, b) => b.sales - a.sales).slice(0, 4),
-            );
-          } catch (err) {
-            fail("top", err);
-          }
-        })(),
       ];
       await Promise.allSettled(tasks);
       setIsLoading(false);
@@ -257,7 +256,7 @@ export default function AdminDashboardPage() {
     [fail], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
-  useEffect(() => {
+  useStrictEffect(() => {
     setIsLoading(true);
     loadAll("day");
   }, [loadAll]);

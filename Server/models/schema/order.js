@@ -87,7 +87,12 @@ const ORDER_TRANSITIONS = Object.freeze({
 
   [OrderStatus.DELIVERED]: [OrderStatus.RETURN_REQUESTED],
 
-  [OrderStatus.RETURN_REQUESTED]: [OrderStatus.RETURNED],
+  /* A rejected return puts the order back in the customer's hands.
+   * Without this edge the order stayed stuck at return_requested. */
+  [OrderStatus.RETURN_REQUESTED]: [
+    OrderStatus.RETURNED,
+    OrderStatus.DELIVERED,
+  ],
 
   [OrderStatus.RETURNED]: [],
 
@@ -789,6 +794,12 @@ export const OrderSchema = new Schema(
     },
 
     codFee: { type: Number, default: 0, min: 0 },
+
+    /* Idempotency guards for inventory side effects. A cancellation
+     * restocks an order exactly once; completing a return restocks the
+     * returned units exactly once. */
+    stockReleasedAt: { type: Date, default: null },
+    returnStockReleasedAt: { type: Date, default: null },
   },
 
   {
@@ -812,17 +823,21 @@ OrderSchema.methods.canTransitionTo = function (nextStatus) {
 
 OrderSchema.methods.transitionTo = async function (
   nextStatus,
-  { note = null, actor = "system", actorId = null, validate = true } = {},
+  { note = null, actor = "system", actorId = null } = {},
 ) {
   if (!Object.values(OrderStatus).includes(nextStatus)) {
     throw new Error(`Invalid order status: ${nextStatus}`);
   }
 
-  if (
-    validate &&
-    this.status !== nextStatus &&
-    !this.canTransitionTo(nextStatus)
-  ) {
+  /* Same-status calls are bugs, not idempotent retries: silently
+   * appending duplicate history made it impossible to tell a real
+   * transition from a double click/retry. Every caller has an
+   * idempotent branch where repetition is legitimate. */
+  if (this.status === nextStatus) {
+    throw new Error(`Order is already ${nextStatus}.`);
+  }
+
+  if (!this.canTransitionTo(nextStatus)) {
     throw new Error(
       `Invalid order transition: ${this.status} -> ${nextStatus}`,
     );
@@ -884,10 +899,41 @@ OrderSchema.methods.markAsPaid = async function ({
   transactionId = null,
   amount = this.totalAmount,
 } = {}) {
+  // Already paid: idempotent. A different payment reference on an
+  // already-paid order is a reconciliation bug, never a second charge.
+  if (this.payment.status === PaymentStatus.PAID) {
+    return this;
+  }
+
+  if (
+    [
+      PaymentStatus.REFUND_PENDING,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ].includes(this.payment.status)
+  ) {
+    throw new Error("A refunded order cannot be marked paid again.");
+  }
+
+  if (
+    [OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(this.status)
+  ) {
+    throw new Error(`Cannot mark a ${this.status} order as paid.`);
+  }
+
+  const paidAmount = Number(amount);
+  if (!Number.isFinite(paidAmount) || paidAmount <= 0) {
+    throw new Error("Payment amount must be greater than zero.");
+  }
+  if (paidAmount > Number(this.totalAmount) + 0.01) {
+    throw new Error("Payment amount exceeds the order total.");
+  }
+
   this.payment.status = PaymentStatus.PAID;
   this.payment.transactionId = transactionId;
-  this.payment.amountPaid = amount;
+  this.payment.amountPaid = paidAmount;
   this.payment.paidAt = new Date();
+  this.payment.failureReason = null;
 
   if (this.status === OrderStatus.PENDING) {
     return this.transitionTo(OrderStatus.CONFIRMED, {
@@ -900,6 +946,25 @@ OrderSchema.methods.markAsPaid = async function ({
 };
 
 OrderSchema.methods.markPaymentFailed = async function (reason = null) {
+  /* Never downgrade money that was actually collected. Late webhook
+   * "failed" events can arrive after a successful capture. */
+  if (
+    [
+      PaymentStatus.PAID,
+      PaymentStatus.REFUND_PENDING,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ].includes(this.payment.status)
+  ) {
+    throw new Error("A paid order cannot be marked as payment failed.");
+  }
+
+  if (
+    [OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(this.status)
+  ) {
+    throw new Error(`Cannot fail payment on a ${this.status} order.`);
+  }
+
   this.payment.status = PaymentStatus.FAILED;
   this.payment.failureReason = reason;
 
@@ -915,6 +980,23 @@ OrderSchema.methods.markCodCollected = async function ({
   if (this.payment.method !== PaymentMethod.COD) {
     throw new Error("Only COD orders can record cash collection.");
   }
+  if (
+    [
+      OrderStatus.CANCELLED,
+      OrderStatus.RETURNED,
+    ].includes(this.status)
+  ) {
+    throw new Error(`Cannot collect cash for a ${this.status} order.`);
+  }
+  if (
+    [
+      PaymentStatus.REFUND_PENDING,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ].includes(this.payment.status)
+  ) {
+    throw new Error("A refunded order cannot record fresh COD collection.");
+  }
   if (this.payment.codStatus === CODStatus.COLLECTED) {
     // Legacy records collected before this rule may still say pending;
     // repair the payment status without touching the collection fields.
@@ -925,17 +1007,29 @@ OrderSchema.methods.markCodCollected = async function ({
     }
     return this; // idempotent
   }
+
+  const collectedAmount =
+    amount === null || amount === undefined ? this.totalAmount : Number(amount);
+  if (!Number.isFinite(collectedAmount) || collectedAmount <= 0) {
+    throw new Error("Collected amount must be greater than zero.");
+  }
+  if (collectedAmount > Number(this.totalAmount) + 0.01) {
+    throw new Error("Collected amount exceeds the order total.");
+  }
+
   this.payment.codStatus = CODStatus.COLLECTED;
   this.payment.codCollectedAt = new Date();
   this.payment.codCollectedBy = actorId;
-  if (amount !== null && Number.isFinite(Number(amount))) {
-    this.payment.amountPaid = Number(amount);
-  }
+  this.payment.amountPaid = collectedAmount;
 
   // Cash collected means the order is actually paid. Keeping the
   // status at "pending" blocked refunds and made paid-order reports
   // (and totalSpent reconciliation) treat collected COD as unpaid.
-  if (this.payment.status === PaymentStatus.PENDING) {
+  if (
+    [PaymentStatus.PENDING, PaymentStatus.FAILED].includes(
+      this.payment.status,
+    )
+  ) {
     this.payment.status = PaymentStatus.PAID;
     this.payment.paidAt = new Date();
   }
@@ -959,6 +1053,9 @@ OrderSchema.methods.startProcessing = async function ({
   actor = "admin",
   actorId = null,
 } = {}) {
+  if (this.status === OrderStatus.PROCESSING) {
+    return this; // idempotent retry
+  }
   if (this.status !== OrderStatus.CONFIRMED) {
     throw new Error("Only confirmed orders can enter processing.");
   }
@@ -972,6 +1069,9 @@ OrderSchema.methods.startProcessing = async function ({
 };
 
 OrderSchema.methods.markAsPacked = async function () {
+  if (this.fulfillment.status === FulfillmentStatus.PACKED) {
+    return this; // idempotent retry
+  }
   if (this.status !== OrderStatus.PROCESSING) {
     throw new Error("Only processing orders can be packed.");
   }
@@ -990,21 +1090,32 @@ OrderSchema.methods.markAsShipped = async function ({
   actor = "admin",
   actorId = null,
 } = {}) {
-  if (![OrderStatus.PROCESSING, OrderStatus.CONFIRMED].includes(this.status)) {
+  if (this.status === OrderStatus.SHIPPED) {
+    return this; // idempotent retry
+  }
+  if (this.status !== OrderStatus.PROCESSING) {
     throw new Error(`Cannot ship order from status: ${this.status}`);
   }
 
   this.fulfillment.status = FulfillmentStatus.SHIPPED;
 
-  this.fulfillment.trackingNumber = trackingNumber;
-
-  this.fulfillment.serviceName = serviceName;
-
-  this.fulfillment.contactNumber = contactNumber;
-
-  this.fulfillment.email = email;
-
-  this.fulfillment.estimatedDelivery = estimatedDelivery;
+  /* Only write fields the caller actually supplied. Passing an empty
+   * sheet used to null out an AWB/shipment already synced by Shipmozo. */
+  if (trackingNumber !== null && trackingNumber !== undefined) {
+    this.fulfillment.trackingNumber = String(trackingNumber);
+  }
+  if (serviceName !== null && serviceName !== undefined) {
+    this.fulfillment.serviceName = serviceName;
+  }
+  if (contactNumber !== null && contactNumber !== undefined) {
+    this.fulfillment.contactNumber = contactNumber;
+  }
+  if (email !== null && email !== undefined) {
+    this.fulfillment.email = email;
+  }
+  if (estimatedDelivery !== null && estimatedDelivery !== undefined) {
+    this.fulfillment.estimatedDelivery = estimatedDelivery;
+  }
 
   this.fulfillment.shippedAt = new Date();
 
@@ -1018,6 +1129,9 @@ OrderSchema.methods.markAsDelivered = async function ({
   actor = "system",
   actorId = null,
 } = {}) {
+  if (this.status === OrderStatus.DELIVERED) {
+    return this; // idempotent courier poll
+  }
   if (this.status !== OrderStatus.SHIPPED) {
     throw new Error("Only shipped orders can be delivered.");
   }
@@ -1124,6 +1238,28 @@ OrderSchema.methods.cancelOrder = async function ({
   });
 };
 
+/* A cancelled prepaid order must enter the refund queue — otherwise
+ * the money sits with the gateway until someone remembers. COD orders
+ * only qualify once cash was actually collected. Idempotent: a second
+ * call while a refund is pending is a no-op. */
+OrderSchema.methods.ensureCancellationRefund = async function ({
+  reason = "Order cancelled",
+} = {}) {
+  if (this.payment.status !== PaymentStatus.PAID) {
+    return this;
+  }
+  if (this.refund.status === RefundStatus.PENDING) {
+    return this;
+  }
+  if (!this.canRefund()) {
+    return this;
+  }
+  return this.requestRefund({
+    amount: this.getRemainingRefundAmount(),
+    reason,
+  });
+};
+
 /* =========================================================
  * RETURNS
  * ========================================================= */
@@ -1135,6 +1271,8 @@ OrderSchema.methods.canRequestReturn = function () {
 OrderSchema.methods.requestReturn = async function ({
   reason = null,
   detail = null,
+  actor = "user",
+  actorId = null,
 } = {}) {
   if (!this.canRequestReturn()) {
     throw new Error(`Cannot request return from status: ${this.status}`);
@@ -1151,7 +1289,8 @@ OrderSchema.methods.requestReturn = async function ({
   this.return.detail = detail ? String(detail).slice(0, 1000) : null;
 
   return this.transitionTo(OrderStatus.RETURN_REQUESTED, {
-    actor: "user",
+    actor,
+    actorId,
     note: reason,
   });
 };
@@ -1173,7 +1312,10 @@ OrderSchema.methods.approveReturn = async function ({ actorId = null } = {}) {
   return this.save();
 };
 
-OrderSchema.methods.rejectReturn = async function ({ reason = null } = {}) {
+OrderSchema.methods.rejectReturn = async function ({
+  reason = null,
+  actorId = null,
+} = {}) {
   if (this.return.status !== ReturnStatus.REQUESTED) {
     throw new Error("No return request exists.");
   }
@@ -1182,10 +1324,20 @@ OrderSchema.methods.rejectReturn = async function ({ reason = null } = {}) {
 
   this.return.rejectionReason = reason;
 
-  return this.save();
+  /* Rejection returns the order to delivered: the customer keeps the
+   * item, so leaving it at return_requested made the order permanently
+   * un-cancellable/un-actionable. */
+  return this.transitionTo(OrderStatus.DELIVERED, {
+    actor: "admin",
+    actorId,
+    note: reason ? `Return rejected: ${reason}` : "Return rejected",
+  });
 };
 
 OrderSchema.methods.markReturnReceived = async function () {
+  if (this.return.status === ReturnStatus.RECEIVED) {
+    return this; // idempotent retry
+  }
   if (this.return.status !== ReturnStatus.APPROVED) {
     throw new Error("Return must be approved first.");
   }
@@ -1198,6 +1350,12 @@ OrderSchema.methods.markReturnReceived = async function () {
 };
 
 OrderSchema.methods.completeReturn = async function ({ actorId = null } = {}) {
+  if (
+    this.return.status === ReturnStatus.COMPLETED &&
+    this.status === OrderStatus.RETURNED
+  ) {
+    return this; // idempotent retry
+  }
   if (this.return.status !== ReturnStatus.RECEIVED) {
     throw new Error("Return must be received first.");
   }
@@ -1205,6 +1363,12 @@ OrderSchema.methods.completeReturn = async function ({ actorId = null } = {}) {
   this.return.status = ReturnStatus.COMPLETED;
 
   this.return.completedAt = new Date();
+
+  /* A completed return means every unit is physically back. Track it on
+   * the line items so reports and stock release agree. */
+  for (const item of this.products ?? []) {
+    item.returnedQuantity = Number(item.quantity) || 0;
+  }
 
   return this.transitionTo(OrderStatus.RETURNED, {
     actor: "admin",
@@ -1228,15 +1392,19 @@ OrderSchema.methods.requestRefund = async function ({
   amount = this.getRemainingRefundAmount(),
   reason = null,
 } = {}) {
+  if (this.refund.status === RefundStatus.PENDING) {
+    throw new Error("A refund is already pending for this order.");
+  }
   if (!this.canRefund()) {
     throw new Error("Order cannot be refunded.");
   }
 
-  if (amount <= 0) {
+  const refundAmount = Number(amount);
+  if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
     throw new Error("Refund amount must be greater than zero.");
   }
 
-  if (amount > this.getRemainingRefundAmount()) {
+  if (refundAmount > this.getRemainingRefundAmount() + 0.001) {
     throw new Error("Refund amount exceeds remaining refundable amount.");
   }
 
@@ -1244,7 +1412,7 @@ OrderSchema.methods.requestRefund = async function ({
 
   this.refund.status = RefundStatus.PENDING;
 
-  this.refund.amount = amount;
+  this.refund.amount = refundAmount;
   this.refund.reason = reason;
 
   this.refund.requestedAt = new Date();
@@ -1255,13 +1423,23 @@ OrderSchema.methods.requestRefund = async function ({
 OrderSchema.methods.completeRefund = async function ({
   transactionId = null,
 } = {}) {
+  if (
+    this.refund.status === RefundStatus.REFUNDED &&
+    this.payment.status === PaymentStatus.REFUNDED
+  ) {
+    return this; // idempotent retry
+  }
   if (this.refund.status !== RefundStatus.PENDING) {
     throw new Error("No pending refund exists.");
   }
 
-  const amount = this.refund.amount;
+  const amount = Number(this.refund.amount);
 
-  if (amount <= 0 || amount > this.getRemainingRefundAmount()) {
+  if (
+    !Number.isFinite(amount) ||
+    amount <= 0 ||
+    amount > this.getRemainingRefundAmount() + 0.001
+  ) {
     throw new Error("Invalid refund amount.");
   }
 
@@ -1515,7 +1693,7 @@ OrderSchema.statics.getOrdersByFulfillmentStatus = function (status) {
 OrderSchema.statics.updateOrderStatus = async function (
   orderId,
   status,
-  { note = null, actor = "system", actorId = null, validate = true } = {},
+  { note = null, actor = "system", actorId = null } = {},
 ) {
   const order = await this.findOne({
     id: orderId,
@@ -1529,7 +1707,6 @@ OrderSchema.statics.updateOrderStatus = async function (
     note,
     actor,
     actorId,
-    validate,
   });
 };
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,7 +95,7 @@ export default function SupportPage() {
     }
   };
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchTickets().catch(() => {});
     fetchUserOrders().catch(() => {});
   }, [fetchUserOrders]);

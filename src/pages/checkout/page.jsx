@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { useNavigate, Link } from "react-router-dom";
 import { StoreMeta } from "@/components/store-meta";
 import { useStoreInfo } from "@/utils/store";
@@ -117,7 +118,7 @@ export default function CheckoutPage() {
     }
   }, []);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchCart().catch(() => {});
     fetchAddresses().catch(() => {});
     refreshConfig().catch(() => setPayConfig(null));
@@ -203,7 +204,7 @@ export default function CheckoutPage() {
     return validateAddressFields(selectedAddress);
   }, [selectedAddress]);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     const pin = String(selectedAddress?.postalCode ?? "").trim();
     if (!pin || pin.length !== 6) {
       setPinVerified(null);
@@ -449,7 +450,7 @@ export default function CheckoutPage() {
     <div className="min-h-screen bg-gradient-to-b from-muted/40 to-background">
       <StoreMeta
         title="Secure Checkout — Address & Payment"
-        description={`Complete your ${store.name} electronics order securely. Choose a verified delivery address and pay via Razorpay (UPI, cards) or Cash on Delivery across Kerala, India.`}
+        description={`Complete your ${store.name} order securely. Choose a verified delivery address and pay via Razorpay (UPI, cards) or Cash on Delivery across Kerala, India.`}
         noIndex
       />
 
@@ -553,7 +554,7 @@ export default function CheckoutPage() {
               <div>
                 <p className="text-lg font-semibold">Your cart is empty</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Add some electronics first — checkout unlocks with items.
+                  Add some products first — checkout unlocks with items.
                 </p>
               </div>
               <Button asChild>

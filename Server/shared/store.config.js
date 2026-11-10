@@ -1,7 +1,7 @@
 /**
  * store.config.js
  * ---------------------------------------------------------------------------
- * SINGLE SOURCE OF TRUTH for the store / brand ("RazorBillz").
+ * SINGLE SOURCE OF TRUTH for the store / brand ("Razorbillz").
  *
  * This module is intentionally dependency-free and uses only ESM syntax so it
  * can be imported from BOTH sides of the project:
@@ -37,20 +37,20 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   brand: {
     /** Customer-facing brand / store name. */
-    name: { en: "RazorBillz", ml: "RazorBillz" },
+    name: { en: "Razorbillz", ml: "Razorbillz" },
     /** Registered / legal entity name (shown in policies, invoices). */
-    legalName: { en: "RazorBillz", ml: "RazorBillz" },
+    legalName: { en: "Razorbillz", ml: "Razorbillz" },
     /** Short machine-friendly name (used for slugs, CSV prefixes, etc.). */
-    shortName: "RazorBillz",
+    shortName: "Razorbillz",
     /** One-line marketing tagline. */
     tagline: {
-      en: "Your one-stop shop for the latest and greatest electronics.",
-      ml: "ഏറ്റവും പുതിയതും മികച്ചതുമായ ഇലക്ട്രോണിക്സിനായുള്ള നിങ്ങളുടെ വൺ-സ്റ്റോപ്പ് ഷോപ്പ്.",
+      en: "Your one-stop shop for quality products across every category.",
+      ml: "എല്ലാ വിഭാഗങ്ങളിലെയും മികച്ച ഉൽപ്പന്നങ്ങൾക്കായുള്ള നിങ്ങളുടെ വൺ-സ്റ്റോപ്പ് ഷോപ്പ്.",
     },
     /** Short "about the store" paragraph. */
     about: {
-      en: "RazorBillz is a comprehensive billing and commerce platform that simplifies invoicing, shopping and payments. We supply industrial-grade electronic components to engineers, makers, startups and institutions across India.",
-      ml: "ഇൻവോയ്സിംഗ്, ഷോപ്പിംഗ്, പേയ്മെന്റ് എന്നിവ ലളിതമാക്കുന്ന സമഗ്രമായ ബില്ലിംഗ് & കൊമേഴ്സ് പ്ലാറ്റ്ഫോമാണ് RazorBillz. ഇന്ത്യയിലുടനീളമുള്ള എഞ്ചിനീയർമാർക്കും മേക്കർമാർക്കും സ്റ്റാർട്ടപ്പുകൾക്കും സ്ഥാപനങ്ങൾക്കും ഞങ്ങൾ ഇൻഡസ്ട്രിയൽ-ഗ്രേഡ് ഇലക്ട്രോണിക് കമ്പോണന്റുകൾ നൽകുന്നു.",
+      en: "Razorbillz is a comprehensive billing and commerce platform that simplifies invoicing, shopping and payments. We bring quality products across categories to customers throughout India.",
+      ml: "ഇൻവോയ്സിംഗ്, ഷോപ്പിംഗ്, പേയ്മെന്റ് എന്നിവ ലളിതമാക്കുന്ന സമഗ്രമായ ബില്ലിംഗ് & കൊമേഴ്സ് പ്ലാറ്റ്ഫോമാണ് Razorbillz. ഇന്ത്യയിലുടനീളമുള്ള ഉപഭോക്താക്കൾക്കായി വിവിധ വിഭാഗങ്ങളിലെ മികച്ച ഉൽപ്പന്നങ്ങൾ ഞങ്ങൾ എത്തിക്കുന്നു.",
     },
   },
 
@@ -77,9 +77,9 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   assets: {
     logo: "/favicon_io/android-chrome-512x512.png",
-    ogLogo32: "https://razorbills.vercel.app/favicon_io/favicon-32x32.png",
+    ogLogo32: "https://razorbillz.vercel.app/favicon_io/favicon-32x32.png",
     ogImage:
-      "https://razorbills.vercel.app/favicon_io/android-chrome-512x512.png",
+      "https://razorbillz.vercel.app/favicon_io/android-chrome-512x512.png",
     icon: "/favicon.ico",
     appleTouchIcon: "/favicon_io/apple-touch-icon.png",
     favicon32: "/favicon_io/favicon-32x32.png",
@@ -119,7 +119,7 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   address: {
     // TODO: replace with the real registered office address.
-    line1: { en: "RazorBillz", ml: "RazorBillz" },
+    line1: { en: "Razorbillz", ml: "Razorbillz" },
     line2: { en: "", ml: "" },
     city: { en: "Malappuram", ml: "മലപ്പുറം" },
     state: { en: "Kerala", ml: "കേരളം" },
@@ -133,7 +133,7 @@ export const storeConfig = {
    * Social profiles. Set a value to null/"" to hide it in the UI.
    * ----------------------------------------------------------------------- */
   social: {
-    instagram: null, // TODO: e.g. "https://www.instagram.com/RazorBillz"
+    instagram: null, // TODO: e.g. "https://www.instagram.com/Razorbillz"
     youtube: null,
     facebook: null,
     x: null,
@@ -146,16 +146,16 @@ export const storeConfig = {
    * ----------------------------------------------------------------------- */
   seo: {
     title: {
-      en: "RazorBillz - Your One-Stop Billing & Commerce Solution",
-      ml: "RazorBillz - നിങ്ങളുടെ വൺ-സ്റ്റോപ്പ് ബില്ലിംഗ് & കൊമേഴ്സ് പരിഹാരം",
+      en: "Razorbillz - Your One-Stop Store for Everything",
+      ml: "Razorbillz - എല്ലാത്തിനുമുള്ള നിങ്ങളുടെ വൺ-സ്റ്റോപ്പ് സ്റ്റോർ",
     },
     description: {
-      en: "RazorBillz is a comprehensive billing solution that simplifies your invoicing, shopping, and payment processes. Manage your bills efficiently with our user-friendly platform.",
-      ml: "ഇൻവോയ്സിംഗ്, ഷോപ്പിംഗ്, പേയ്മെന്റ് പ്രക്രിയകൾ ലളിതമാക്കുന്ന സമഗ്ര ബില്ലിംഗ് പരിഹാരമാണ് RazorBillz. ഞങ്ങളുടെ ഉപയോക്തൃ-സൗഹൃദ പ്ലാറ്റ്ഫോം ഉപയോഗിച്ച് ബില്ലുകൾ കാര്യക്ഷമമായി കൈകാര്യം ചെയ്യുക.",
+      en: "Razorbillz makes shopping, invoicing, and payments simple with a trusted selection of products across categories.",
+      ml: "വിവിധ വിഭാഗങ്ങളിലെ വിശ്വസനീയമായ ഉൽപ്പന്നങ്ങളിലൂടെ ഷോപ്പിംഗ്, ഇൻവോയ്സിംഗ്, പേയ്മെന്റുകൾ എന്നിവ Razorbillz ലളിതമാക്കുന്നു.",
     },
     keywords: {
-      en: "RazorBillz, electronics, electronic components, billing, invoicing, online shopping, kerala, india",
-      ml: "RazorBillz, ഇലക്ട്രോണിക്സ്, ഇലക്ട്രോണിക് കമ്പോണന്റുകൾ, ബില്ലിംഗ്, ഇൻവോയ്സിംഗ്, ഓൺലൈൻ ഷോപ്പിംഗ്, കേരളം, ഇന്ത്യ",
+      en: "Razorbillz, online shopping, products, billing, invoicing, Kerala, India",
+      ml: "Razorbillz, ഓൺലൈൻ ഷോപ്പിംഗ്, ഉൽപ്പന്നങ്ങൾ, ബില്ലിംഗ്, ഇൻവോയ്സിംഗ്, കേരളം, ഇന്ത്യ",
     },
     ogType: "website",
     twitterCard: "summary_large_image",

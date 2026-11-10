@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useStoreInfo } from '@/utils/store';
 
-export default function RazorbillsShipping() {
+export default function RazorbillzShipping() {
   const { t } = useTranslation();
   const store = useStoreInfo();
 

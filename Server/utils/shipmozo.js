@@ -51,6 +51,32 @@ export function shipmozoConfig() {
   };
 }
 
+/* Typed error for the only expected failure in local/test
+ * environments: credentials/live switch are placeholders. Routes map
+ * this to HTTP 503 with a stable code; unrelated provider failures are
+ * never swallowed. */
+export const SHIPMENT_CONFIGURATION_MISSING =
+  "SHIPMENT_CONFIGURATION_MISSING";
+
+export function shipmentConfigError(message) {
+  const err = new Error(
+    message ??
+      "Shipmozo is not configured. Set SHIPMOZO_PUBLIC_KEY, SHIPMOZO_PRIVATE_KEY and SHIPMOZO_ALLOW_LIVE=true.",
+  );
+  err.code = SHIPMENT_CONFIGURATION_MISSING;
+  err.status = 503;
+  return err;
+}
+
+export function isShipmozoConfigured() {
+  return shipmozoConfig().configured;
+}
+
+export function assertShipmozoConfigured() {
+  if (!shipmozoConfig().configured) throw shipmentConfigError();
+}
+
+
 function authHeaders() {
   const { publicKey, privateKey } = shipmozoConfig();
   return {
@@ -240,12 +266,13 @@ export function getReturnReasons() {
 /* Resolve the warehouse_id push-order requires:
  * explicit opt -> env -> default ACTIVE warehouse from panel. */
 export async function resolveWarehouseId(explicit) {
+  assertShipmozoConfigured();
   if (explicit ?? process.env.SHIPMOZO_WAREHOUSE_ID) {
     return explicit ?? process.env.SHIPMOZO_WAREHOUSE_ID;
   }
   const resp = await getWarehouses();
   if (!isShipmozoSuccess(resp) || !Array.isArray(resp.data)) {
-    throw new Error(
+    throw shipmentConfigError(
       "No SHIPMOZO_WAREHOUSE_ID configured and warehouse lookup failed. Set the env or create a warehouse first.",
     );
   }
@@ -253,7 +280,7 @@ export async function resolveWarehouseId(explicit) {
     resp.data.find((w) => w.default === "YES" && w.status === "ACTIVE") ??
     resp.data.find((w) => w.status === "ACTIVE") ??
     resp.data[0];
-  if (!def?.id) throw new Error("No usable Shipmozo warehouse found.");
+  if (!def?.id) throw shipmentConfigError("No usable Shipmozo warehouse found.");
   return def.id;
 }
 
@@ -360,6 +387,66 @@ export function getOrderDetail(orderId) {
 export function trackOrder({ awbNumber }) {
   if (!awbNumber) throw new Error("awbNumber is required");
   return get("/track-order", { awb_number: awbNumber });
+}
+
+/* Precise courier-status classifier. Substring matching on "deliver"
+ * wrongly treated "Out for Delivery" as delivered, which completed
+ * orders before the parcel reached the customer. Order matters:
+ * terminal/side states are checked before the generic delivery word. */
+export function classifyTrackingStatus(status) {
+  const s = String(status ?? "")
+    .toLowerCase()
+    .replace(/[_\-/]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!s) return "unknown";
+
+  if (/\bcancel/.test(s)) return "cancelled";
+  if (
+    /\brto\b|\breturn(ed)? to (origin|seller|shipper|consignor)\b|\breverse pickup\b|\breturn shipment\b/.test(
+      s,
+    )
+  ) {
+    return "rto";
+  }
+  if (/\b(out for delivery|out for dispatch|ofd)\b/.test(s)) {
+    return "out_for_delivery";
+  }
+  if (
+    /\b(undelivered|not delivered|delivery attempted|attempted delivery|delivery failed|failed delivery|delivery exception|ndr)\b/.test(
+      s,
+    )
+  ) {
+    return "delivery_exception";
+  }
+  if (/\b(delivered|delivery successful|delivery completed|delivery complete)\b/.test(s)) {
+    return "delivered";
+  }
+  return "in_transit";
+}
+
+const historySignature = (entry) =>
+  [
+    entry?.status ?? "",
+    entry?.message ?? "",
+    entry?.location ?? "",
+  ].join("|");
+
+/* Tracking polls repeat the same scans. Merge only unseen entries so a
+ * refresh loop cannot grow fulfillment.history without bound. */
+export function appendUniqueHistory(order, entries = []) {
+  if (!order?.fulfillment) return order;
+  const history = order.fulfillment.history ?? [];
+  const seen = new Set(history.map(historySignature));
+  for (const entry of entries) {
+    if (!entry) continue;
+    const key = historySignature(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    history.push(entry);
+  }
+  order.fulfillment.history = history;
+  return order;
 }
 
 /* Normalize the real track-order payload into fulfillment.history.
@@ -503,7 +590,13 @@ export function trackingUrlFor(awbNumber) {
 
 export default {
   shipmozoConfig,
+  isShipmozoConfigured,
+  assertShipmozoConfigured,
+  shipmentConfigError,
+  SHIPMENT_CONFIGURATION_MISSING,
   isShipmozoSuccess,
+  classifyTrackingStatus,
+  appendUniqueHistory,
   apiInfo,
   login,
   checkServiceability,

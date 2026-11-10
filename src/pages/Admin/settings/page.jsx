@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { useTranslation } from "react-i18next";
 import { Helmet } from "react-helmet-async";
 import { useNavigate } from "react-router-dom";
@@ -41,7 +42,7 @@ export default function AdminSettingsPage() {
 
   const current = session?.user ?? null;
 
-  useEffect(() => {
+  useStrictEffect(() => {
     let cancelled = false;
     (async () => {
       try {

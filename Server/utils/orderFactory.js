@@ -170,14 +170,37 @@ export async function createOrderRecord({
   return order;
 }
 
-/* Release reserved stock after a terminal cancellation.
- * Best-effort: failures are logged, never thrown. */
-export async function releaseOrderStock(order) {
+/* Release reserved stock after a terminal cancellation or completed
+ * return. Idempotent per order so a double click / retried request
+ * cannot inflate inventory. Best-effort: failures are logged, never
+ * thrown, and the order is left unmarked so a later retry can succeed. */
+export async function releaseOrderStock(
+  order,
+  { reason = "cancellation" } = {},
+) {
+  if (!order) return order;
+  const isReturn = reason === "return";
+  const marker = isReturn ? "returnStockReleasedAt" : "stockReleasedAt";
+
+  if (order[marker]) return order;
+
   try {
     await releaseStock(order?.products ?? []);
   } catch (err) {
     console.error("[orderFactory] stock release failed:", err?.message);
+    return order;
   }
+
+  if (typeof order.save === "function") {
+    order[marker] = new Date();
+    try {
+      await order.save();
+    } catch (err) {
+      console.error("[orderFactory] stock release marker failed:", err?.message);
+    }
+  }
+
+  return order;
 }
 
 /* Open sealed order addresses for read/consumer paths. Returns a new

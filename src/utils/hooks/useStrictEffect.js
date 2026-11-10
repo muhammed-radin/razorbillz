@@ -16,43 +16,50 @@ function areDepsEqual(prevDeps, nextDeps) {
 /**
  * useStrictEffect
  *
- * Enterprise hook to enforce idempotent execution of side-effects under React 18 & 19
- * Strict Mode (which mounts, unmounts, and re-mounts components in development).
+ * Runs a side-effect exactly once per dependency set, even under React
+ * Strict Mode's mount -> cleanup -> mount simulation.
  *
- * Guarantees that expensive operations (like initial API fetches or socket initializations)
- * execute strictly ONCE per dependency set, eliminating duplicate network calls while
- * seamlessly supporting dynamic dependencies (such as route param changes: [id]).
+ * The key detail is that cleanup is deferred to a microtask. Strict
+ * Mode performs its simulated unmount/remount synchronously, so the
+ * second effect run bumps the generation token before the microtask
+ * fires; the stale cleanup then sees the newer generation and does
+ * nothing. A real unmount has no newer run, so cleanup executes.
  *
  * @param {Function} effect - Callback returning an optional cleanup function
  * @param {Array} deps - Dependency array.
  */
 export function useStrictEffect(effect, deps = []) {
-  const lastExecutedDepsRef = useRef(null);
+  const depsRef = useRef(null);
   const cleanupRef = useRef(null);
+  const generationRef = useRef(0);
 
   useEffect(() => {
-    // Check if the current deps match the deps from the last execution (StrictMode simulation)
-    const isStrictModeDoubleInvoke =
-      lastExecutedDepsRef.current !== null &&
-      areDepsEqual(lastExecutedDepsRef.current, deps);
+    const depsChanged = !areDepsEqual(depsRef.current, deps);
 
-    if (!isStrictModeDoubleInvoke) {
-      lastExecutedDepsRef.current = deps;
-
-      if (typeof cleanupRef.current === "function") {
-        cleanupRef.current();
-      }
-
-      cleanupRef.current = effect();
-    }
-
-    return () => {
-      // In development Strict Mode, React immediately unmounts on pass 2, but leaves
-      // the fiber ref intact. We do NOT clear lastExecutedDepsRef so pass 3 is recognized as duplicate deps.
+    if (depsChanged) {
       if (typeof cleanupRef.current === "function") {
         cleanupRef.current();
         cleanupRef.current = null;
       }
+      depsRef.current = deps;
+      cleanupRef.current = effect();
+    }
+
+    const generation = ++generationRef.current;
+
+    return () => {
+      // Defer: StrictMode re-runs this effect synchronously. A newer
+      // generation means this cleanup belongs to the simulated unmount.
+      queueMicrotask(() => {
+        // Intentional: inspect the LATEST generation to detect a
+        // StrictMode remount that happened after this cleanup was queued.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (generationRef.current !== generation) return;
+        if (typeof cleanupRef.current === "function") {
+          cleanupRef.current();
+          cleanupRef.current = null;
+        }
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
@@ -61,33 +68,54 @@ export function useStrictEffect(effect, deps = []) {
 /**
  * useStrictFetchEffect
  *
- * Specialization for asynchronous data fetching. Integrates an AbortController
- * with dependency tracking, ensuring in-flight request cancellation if dependencies change.
+ * Async specialization of useStrictEffect with an AbortController.
+ *
+ * - The fetch fires once per dependency set.
+ * - StrictMode's simulated unmount does NOT abort the only request.
+ * - A real dependency change aborts the previous request immediately.
+ * - A real unmount aborts the request (deferred one microtask so a
+ *   StrictMode remount can cancel the pending abort).
  *
  * @param {(signal: AbortSignal) => Promise<void> | void} fetchFn
  * @param {Array} deps
  */
 export function useStrictFetchEffect(fetchFn, deps = []) {
-  const lastExecutedDepsRef = useRef(null);
+  const depsRef = useRef(null);
+  const controllerRef = useRef(null);
+  const generationRef = useRef(0);
+  const fetchFnRef = useRef(fetchFn);
+
+  // Always call the latest callback without making it a dependency.
+  fetchFnRef.current = fetchFn;
 
   useEffect(() => {
-    const isStrictModeDoubleInvoke =
-      lastExecutedDepsRef.current !== null &&
-      areDepsEqual(lastExecutedDepsRef.current, deps);
+    const depsChanged = !areDepsEqual(depsRef.current, deps);
 
-    if (isStrictModeDoubleInvoke) return;
-    lastExecutedDepsRef.current = deps;
+    if (depsChanged) {
+      // Dependencies genuinely changed: cancel the previous request
+      // before starting the next one.
+      controllerRef.current?.abort();
 
-    const controller = new AbortController();
+      depsRef.current = deps;
+      const controller = new AbortController();
+      controllerRef.current = controller;
 
-    Promise.resolve(fetchFn(controller.signal)).catch((err) => {
-      if (err.name !== "CanceledError" && err.name !== "AbortError") {
-        console.error("[useStrictFetchEffect] Request error:", err);
-      }
-    });
+      Promise.resolve(fetchFnRef.current(controller.signal)).catch((err) => {
+        if (err?.name !== "CanceledError" && err?.name !== "AbortError") {
+          console.error("[useStrictFetchEffect] Request error:", err);
+        }
+      });
+    }
+
+    const generation = ++generationRef.current;
 
     return () => {
-      controller.abort();
+      queueMicrotask(() => {
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+        if (generationRef.current !== generation) return;
+        controllerRef.current?.abort();
+        controllerRef.current = null;
+      });
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);

@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -554,7 +555,7 @@ export default function OrderStatusPage() {
   const [tracking, setTracking] = useState(null);
   const [trackingLoading, setTrackingLoading] = useState(false);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     if (orderId) fetchDetail(orderId).catch(() => {});
   }, [orderId, fetchDetail]);
 

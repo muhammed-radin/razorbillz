@@ -17,6 +17,7 @@ import { OrderModel } from "../models/schema/order.js";
 import { evt, Evts } from "../utils/events.manage.js";
 import { Errors } from "../utils/httpError.js";
 import { ah } from "../utils/middlewares/errorHandler.js";
+import { isStaffUser } from "../utils/roles.js";
 
 const router = express.Router();
 
@@ -76,8 +77,7 @@ async function assertOwnedOrder(orderId, userId) {
   return order;
 }
 
-const isStaff = (req) =>
-  req.user?.role === "admin" || req.user?.role === "owner";
+const isStaff = (req) => isStaffUser(req.user);
 
 async function loadTicketOrThrow(id, req) {
   const ticket = await SupportTicketModel.findOne({ id });
@@ -164,7 +164,7 @@ router.get(
     ]);
     return res.json({
       success: true,
-      tickets: tickets.map(({ audit, ...rest }) => rest),
+      tickets: tickets.map(publicTicket),
       total,
     });
   }),
@@ -183,26 +183,33 @@ router.get(
   }),
 );
 
-/* POST /support/:id/messages — follow-up (reopens resolved). */
+/* POST /support/:id/messages — CUSTOMER follow-up only. Staff replies
+ * go through POST /:id/reply so a message's direction can never be
+ * derived from a role check on the customer endpoint. */
 router.post(
   "/:id/messages",
   requireAuth,
   passUserAuth,
   messageLimiter,
   ah(async (req, res) => {
-    const ticket = await loadTicketOrThrow(req.params.id, req);
-    if (ticket.status === TicketStatus.CLOSED && !isStaff(req)) {
+    const ticket = await SupportTicketModel.findOne({ id: req.params.id });
+    if (!ticket) throw Errors.notFound("Ticket not found.");
+    if (ticket.userId !== req.user?.id) {
+      throw Errors.forbidden(
+        "Only the ticket owner can post customer messages. Staff replies use the reply endpoint.",
+      );
+    }
+    if (ticket.status === TicketStatus.CLOSED) {
       throw Errors.validation("Closed tickets cannot receive new messages.");
     }
     const text = validateMessage(req.body?.message);
-    const sender = isStaff(req) ? "admin" : "user";
     ticket.messages.push({
-      sender,
+      sender: "user",
       senderId: req.user?.id ?? null,
       body: text,
     });
     let reopened = false;
-    if (ticket.status === TicketStatus.RESOLVED && sender === "user") {
+    if (ticket.status === TicketStatus.RESOLVED) {
       ticket.status = TicketStatus.OPEN;
       reopened = true;
       ticket.audit.push({ action: "reopened", actorId: req.user?.id });
@@ -212,12 +219,50 @@ router.post(
       ticketId: ticket.id,
       userId: ticket.userId,
       orderId: ticket.orderId,
-      sender,
+      sender: "user",
     });
-    const open = isStaff(req)
-      ? decryptSupportTicket(ticket)
-      : publicTicket(ticket);
-    return res.json({ success: true, ticket: open });
+    return res.json({ success: true, ticket: publicTicket(ticket) });
+  }),
+);
+
+/* POST /support/:id/reply — STAFF-only reply (admin UI). Always writes
+ * sender:"admin"; customers cannot reach it (requireAdmin + respond). */
+router.post(
+  "/:id/reply",
+  requireAuth,
+  requireAdmin,
+  requirePermission({ support: ["respond"] }),
+  messageLimiter,
+  ah(async (req, res) => {
+    const ticket = await loadTicketOrThrow(req.params.id, req);
+    if (ticket.status === TicketStatus.CLOSED) {
+      throw Errors.validation("Closed tickets cannot receive replies.");
+    }
+    const text = validateMessage(req.body?.message ?? req.body?.body);
+    ticket.messages.push({
+      sender: "admin",
+      senderId: req.user?.id ?? null,
+      body: text,
+    });
+
+    /* Keep the ticket workflow in sync with the reply without
+     * fabricating a resolution. Resolved tickets reopen for follow-up. */
+    let reopened = false;
+    if (ticket.status === TicketStatus.OPEN || ticket.status === TicketStatus.PENDING) {
+      ticket.status = TicketStatus.IN_PROGRESS;
+    } else if (ticket.status === TicketStatus.RESOLVED) {
+      ticket.status = TicketStatus.OPEN;
+      reopened = true;
+    }
+    ticket.audit.push({ action: "staff_replied", actorId: req.user?.id });
+    await ticket.save();
+    safeEvent(reopened ? Evts.TICKET_REOPENED : Evts.TICKET_REPLIED, {
+      ticketId: ticket.id,
+      userId: ticket.userId,
+      orderId: ticket.orderId,
+      sender: "admin",
+    });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -289,13 +334,14 @@ router.patch(
       );
     }
     ticket.status = next;
-    if (next === TicketStatus.RESOLVED || next === TicketStatus.CLOSED) {
-      ticket.resolutionNote = String(req.body?.note ?? "").slice(0, 1000) || null;
+    const note = String(req.body?.note ?? "").trim();
+    if ((next === TicketStatus.RESOLVED || next === TicketStatus.CLOSED) && note) {
+      ticket.resolutionNote = note.slice(0, 1000);
     }
     ticket.audit.push({
       action: `status:${next}`,
       actorId: req.user?.id,
-      note: ticket.resolutionNote,
+      note: note || null,
     });
     await ticket.save();
     safeEvent(

@@ -7,6 +7,7 @@ import {
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import {
   OrderModel,
+  OrderStatus,
   PaymentStatus,
   PaymentMethod,
   CODStatus,
@@ -499,7 +500,19 @@ router.post(
         const order = await OrderModel.findOne({
           "payment.razorpayOrderId": gatewayOrderId,
         });
-        if (order && order.payment.status !== PaymentStatus.PAID && paymentEntity.id) {
+        if (
+          order &&
+          order.payment.status !== PaymentStatus.PAID &&
+          ![OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(
+            order.status,
+          ) &&
+          ![
+            PaymentStatus.REFUND_PENDING,
+            PaymentStatus.PARTIALLY_REFUNDED,
+            PaymentStatus.REFUNDED,
+          ].includes(order.payment.status) &&
+          paymentEntity.id
+        ) {
           const dup = await OrderModel.findOne({
             "payment.razorpayPaymentId": paymentEntity.id,
             "payment.status": PaymentStatus.PAID,
@@ -546,10 +559,25 @@ router.post(
       const order = await OrderModel.findOne({
         "payment.razorpayOrderId": gatewayOrderId,
       });
-      if (order && order.payment.status !== PaymentStatus.PAID) {
-        await order.markPaymentFailed(
-          paymentEntity.error_description ?? "payment failed (webhook)",
-        );
+      if (
+        order &&
+        order.payment.status !== PaymentStatus.PAID &&
+        ![OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status) &&
+        ![
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        try {
+          await order.markPaymentFailed(
+            paymentEntity.error_description ?? "payment failed (webhook)",
+          );
+        } catch (err) {
+          // Late failure events must never 500 the webhook or downgrade
+          // money already captured/refunded.
+          console.error("[payments] webhook failure update skipped:", err?.message);
+        }
       }
       safeEvent(Evts.PAYMENT_FAILED, { source: "webhook", gatewayOrderId });
     }
@@ -589,6 +617,17 @@ async function recordFailure(req) {
   if (order.userId !== req.user?.id) throw Errors.forbidden("Access denied.");
   if (order.payment.status === PaymentStatus.PAID) {
     return { order, alreadyPaid: true };
+  }
+  if (
+    [OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status) ||
+    [
+      PaymentStatus.REFUND_PENDING,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ].includes(order.payment.status)
+  ) {
+    // Late/canceled client reports are not payment state changes.
+    return { order, skipped: true };
   }
   await order.markPaymentFailed(
     cancelled ? "checkout cancelled by customer" : (reason ?? "payment failed"),

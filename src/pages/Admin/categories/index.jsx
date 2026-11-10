@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { toast } from "sonner";
 import {
   Tags,
@@ -91,7 +92,7 @@ export default function AdminCategoriesPage() {
     }
   };
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchAll();
   }, []);
 

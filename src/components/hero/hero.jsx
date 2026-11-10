@@ -2,6 +2,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight, Zap, Shield, Truck, Star } from "lucide-react";
 import { Link } from "react-router-dom";
 import HeroVisual, { HeroImage } from "./hero-visual";
+import { useStoreInfo } from "@/utils/store";
 
 const Hero = ({
   heading = "Power Your Innovation",
@@ -18,6 +19,7 @@ const Hero = ({
     },
   },
 }) => {
+  const store = useStoreInfo();
   return (
     <section className="relative overflow-hidden bg-gradient-to-br from-background via-background to-accent/20 dark:to-accent/10">
       {/* Animated background elements - using transform for better performance */}
@@ -38,7 +40,7 @@ const Hero = ({
             {/* Badge */}
             <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-primary/10 border border-primary/20 text-primary text-sm font-medium hero-animate-fade-in">
               <Zap className="w-4 h-4" />
-              <span>Quality Electronics Store</span>
+              <span>{store.name} Store</span>
             </div>
 
             {/* Main Heading */}

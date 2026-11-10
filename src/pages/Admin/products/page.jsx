@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { Plus, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { api } from "@/utils/api";
 import { currency as formatCurrency } from "@/utils/currency";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 // components
 import HeroHeader from "./components/hero-header.admin";
@@ -37,6 +38,7 @@ export default function AdminProductsPage() {
   const [totalPages, setTotalPages] = useState(5);
   const { current: itemsPerPage } = useRef(10);
   const searchTimer = useRef(null);
+  const lastSearchRef = useRef(null);
 
   const [currentPage, setCurrentPage] = useSearchParams();
 
@@ -46,24 +48,37 @@ export default function AdminProductsPage() {
   const pageNum = parseInt(currentPage.get("page") || "1", 10) || 1;
 
   // Server-side search + pagination: GET /api/products?search=&page=&limit=
-  useEffect(() => {
-    fetchProducts(pageNum, searchQuery);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [pageNum]);
-
-  useEffect(() => {
+  // One effect drives both page changes and debounced text search, so the
+  // initial mount no longer fires the page fetch and the search timer twice.
+  useStrictEffect(() => {
     if (searchTimer.current) clearTimeout(searchTimer.current);
-    searchTimer.current = setTimeout(() => {
+
+    const term = searchQuery.trim();
+    const changedSearch = lastSearchRef.current !== term;
+    lastSearchRef.current = term;
+
+    // A new search always starts from page 1.
+    if (term && pageNum !== 1) {
       setCurrentPage({ page: "1" });
-      fetchProducts(1, searchQuery);
-    }, 400);
+      return;
+    }
+
+    if (changedSearch && term) {
+      searchTimer.current = setTimeout(() => {
+        fetchProducts(1, term);
+      }, 400);
+      return () => {
+        if (searchTimer.current) clearTimeout(searchTimer.current);
+      };
+    }
+
+    fetchProducts(pageNum, term);
     return () => {
       if (searchTimer.current) clearTimeout(searchTimer.current);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchQuery]);
+  }, [pageNum, searchQuery]);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchProductStatics();
   }, []);
 

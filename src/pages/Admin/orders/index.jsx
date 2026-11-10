@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -74,6 +74,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { ordersApi, paymentsApi, shipmentsApi } from "@/services/shop";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { decryptAddress, decryptField } from "@/utils/crypt";
 import { cn } from "@/lib/utils";
 import {
@@ -418,7 +419,8 @@ export default function OrdersPage() {
   const [deciding, setDeciding] = useState(false);
 
   // Live orders from GET /api/orders/list (admin, read permission).
-  useEffect(() => {
+  // StrictMode-safe: the initial read fires once, not twice.
+  useStrictEffect(() => {
     fetchOrders();
   }, []);
 

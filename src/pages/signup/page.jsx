@@ -263,7 +263,7 @@ const SignUpPage = () => {
   return (
     <AuthLayout
       type="signup"
-      title={t("auth.signupTitle", { defaultValue: "Sign up for RazorBillz" })}
+      title={t("auth.signupTitle", { defaultValue: "Sign up for Razorbillz" })}
       subtitle="Join in seconds to access order tracking and member pricing."
       seoTitle={t("auth.signupTitle", { defaultValue: "Sign Up" })}
     >

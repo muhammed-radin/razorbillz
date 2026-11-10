@@ -24,7 +24,7 @@ These variables are supported by the commerce and authentication templates:
 
 | Variable | Type | Description |
 | --- | --- | --- |
-| `appName` | `string` | Product or store name. Defaults to `RazorBills` for commerce templates and `Razorbillz` for auth templates. |
+| `appName` | `string` | Product or store name. Defaults to `Razorbillz`. |
 | `logoUrl` | `string` | Public URL of the logo displayed before the product name. |
 | `logo` | `string` | Alias for `logoUrl`. |
 | `logoAlt` | `string` | Accessible image alt text. Defaults to `appName`. |
@@ -42,10 +42,10 @@ Template: `verification.ejs`
 ```js
 {
   appName: "Razorbillz",
-  logoUrl: "https://razorbills.vercel.app/logo-1.png",
+  logoUrl: "https://razorbillz.vercel.app/logo-1.png",
   name: "John",
   verificationType: "both", // "link", "otp", or "both"
-  verificationUrl: "https://razorbills.vercel.app/verify?token=abc123",
+  verificationUrl: "https://razorbillz.vercel.app/verify?token=abc123",
   code: "482913",
   expiryMinutes: 15
 }

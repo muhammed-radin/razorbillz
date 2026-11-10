@@ -10,6 +10,8 @@ import { priceOrderItems } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
 import { createOrderRecord, releaseOrderStock, decryptOrderAddresses } from "../utils/orderFactory.js";
 import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
+import { isStaffUser } from "../utils/roles.js";
+import { refundRazorpayPayment } from "../utils/razorpay.js";
 import {
   OrderModel,
   OrderStatus,
@@ -48,6 +50,76 @@ function orderStatusEventType(status) {
     return Evts.ORDER_RETURN_REQUESTED;
   }
   return Evts.ORDER_STATUS_CHANGED;
+}
+
+/* A cancellation is only final once reserved stock is released and any
+ * captured money is queued for refund. Both steps are idempotent, so an
+ * approve retry / double click cannot restock twice or double-queue. */
+async function finalizeCancellation(order, { actorId = null, reason = "Order cancelled" } = {}) {
+  await releaseOrderStock(order);
+
+  let updated = order;
+  if (updated.payment?.status === PaymentStatus.PAID) {
+    try {
+      updated = await updated.ensureCancellationRefund({ reason });
+    } catch (err) {
+      // Never fail the cancellation because the refund queue hiccuped;
+      // the payment stays paid and an admin can queue it manually.
+      console.error("[orders] cancellation refund queue failed:", err?.message);
+    }
+  }
+  return updated;
+}
+
+/* Generic admin status changes must go through the domain methods so the
+ * same guards (payment, returns, inventory) apply as the dedicated
+ * endpoints. `validate:false` from clients is intentionally ignored. */
+async function applyAdminStatusTransition(order, body, actorId) {
+  const status = body?.status;
+  const note = body?.note ?? null;
+  const reason = body?.reason ?? note ?? null;
+
+  switch (status) {
+    case OrderStatus.PROCESSING:
+      return order.startProcessing({ actor: "admin", actorId });
+
+    case OrderStatus.SHIPPED:
+      return order.markAsShipped({
+        trackingNumber: body?.trackingNumber ?? null,
+        serviceName: body?.serviceName ?? null,
+        contactNumber: body?.contactNumber ?? null,
+        email: body?.email ?? null,
+        estimatedDelivery: body?.estimatedDelivery ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.DELIVERED:
+      return order.markAsDelivered({ actor: "admin", actorId });
+
+    case OrderStatus.CANCELLED:
+      return order.cancelOrder({
+        reason: reason ?? "Cancelled by admin",
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURN_REQUESTED:
+      return order.requestReturn({
+        reason: reason ?? "Return requested by admin",
+        detail: body?.detail ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURNED:
+      return order.completeReturn({ actorId });
+
+    default:
+      // PENDING / CONFIRMED have no dedicated method; transitionTo still
+      // validates the edge and rejects same-status calls.
+      return order.transitionTo(status, { note, actor: "admin", actorId });
+  }
 }
 
 /*
@@ -493,7 +565,7 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+    const isAdmin = isStaffUser(req.user);
     if (!isAdmin && order.userId !== req.user?.id) {
       return res.status(403).json({
         code: 403,
@@ -706,7 +778,7 @@ router.get("/:id/status", requireAuth, passUserAuth, async (req, res) => {
      *
      * Admins may access any order.
      */
-    const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+    const isAdmin = isStaffUser(req.user);
 
     if (!isAdmin && order.userId !== req.user?.id) {
       return res.status(403).json({
@@ -857,24 +929,22 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
-      // Terminal cancellation restores reserved inventory (best-effort).
-      await releaseOrderStock(updatedOrder);
+      /* Terminal cancellation restores reserved inventory and (for a
+       * captured payment) enters the refund queue. Both are idempotent. */
+      const finalized = await finalizeCancellation(updatedOrder, {
+        actorId: req.user?.id ?? null,
+        reason: updatedOrder.cancellation?.reason ?? "Order cancelled",
+      });
 
-      fireOrderEvent(Evts.ORDER_CANCELLED, updatedOrder, {
+      fireOrderEvent(Evts.ORDER_CANCELLED, finalized, {
         approved: true,
         actorId: req.user?.id ?? null,
+        refundPending: finalized.refund?.status === RefundStatus.PENDING,
       });
-      if (updatedOrder.payment.status === PaymentStatus.PAID) {
-        // Prepaid cancellation only REQUESTS review — a refund is a
-        // separate verified step (POST /:id/refund). Never implied.
-        fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
-          note: "cancelled while paid — refund pending admin action",
-        });
-      }
 
       return res.json({
         success: true,
-        order: updatedOrder,
+        order: finalized,
       });
     } catch (err) {
       console.error("Error approving cancellation:", err);
@@ -943,7 +1013,8 @@ router.post(
   requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
-      const { status, note = null, validate = true } = req.body ?? {};
+      const body = req.body ?? {};
+      const status = body.status;
 
       if (!status) {
         return res.status(400).json({
@@ -970,21 +1041,31 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.transitionTo(status, {
-        note,
-        actor: "admin",
-        actorId: req.user?.id ?? null,
-        validate: validate !== false,
-      });
-
-      fireOrderEvent(orderStatusEventType(status), updatedOrder, {
-        note,
-        actorId: req.user?.id ?? null,
-      });
+      /* `validate:false` used to bypass the state machine entirely.
+       * It is no longer honoured: every transition is validated. */
+      let updatedOrder = await applyAdminStatusTransition(
+        order,
+        body,
+        req.user?.id ?? null,
+      );
 
       if (status === OrderStatus.CANCELLED) {
-        await releaseOrderStock(updatedOrder);
+        updatedOrder = await finalizeCancellation(updatedOrder, {
+          actorId: req.user?.id ?? null,
+          reason: body.reason ?? body.note ?? "Cancelled by admin",
+        });
+      } else if (status === OrderStatus.RETURNED) {
+        // Completing a return puts the units back into inventory once.
+        await releaseOrderStock(updatedOrder, { reason: "return" });
       }
+
+      fireOrderEvent(orderStatusEventType(status), updatedOrder, {
+        note: body.note ?? null,
+        actorId: req.user?.id ?? null,
+        ...(status === OrderStatus.CANCELLED
+          ? { refundPending: updatedOrder.refund?.status === RefundStatus.PENDING }
+          : {}),
+      });
 
       return res.json({
         success: true,
@@ -1024,6 +1105,26 @@ router.post(
       }
 
       const wasPaid = order.payment.status === PaymentStatus.PAID;
+
+      if (
+        [
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_REFUNDED",
+          error: "A refunded order cannot be marked as paid.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot mark a ${order.status} order as paid.`,
+        });
+      }
 
       const updatedOrder = await order.markAsPaid({
         transactionId: req.body?.transactionId ?? null,
@@ -1073,6 +1174,27 @@ router.post(
         return res.status(404).json({
           code: 404,
           error: "Order not found",
+        });
+      }
+
+      if (
+        [
+          PaymentStatus.PAID,
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_CAPTURED",
+          error: "A paid/refunded order cannot be marked as payment failed.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot fail payment on a ${order.status} order.`,
         });
       }
 
@@ -1356,6 +1478,8 @@ router.post("/:id/return", requireAuth, passUserAuth, async (req, res) => {
       updatedOrder = await order.requestReturn({
         reason,
         detail: detail || null,
+        actor: "user",
+        actorId: req.user?.id ?? null,
       });
     } catch (err) {
       return res.status(400).json({
@@ -1447,6 +1571,7 @@ router.post(
 
       const updatedOrder = await order.rejectReturn({
         reason: req.body?.reason ?? null,
+        actorId: req.user?.id ?? null,
       });
 
       return res.json({
@@ -1532,6 +1657,9 @@ router.post(
       const updatedOrder = await order.completeReturn({
         actorId: req.user?.id ?? null,
       });
+
+      // Returned units re-enter inventory exactly once.
+      await releaseOrderStock(updatedOrder, { reason: "return" });
 
       fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
         note: "return completed",
@@ -1635,12 +1763,70 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.completeRefund({
-        transactionId: req.body?.transactionId ?? null,
-      });
+      if (order.refund.status !== RefundStatus.PENDING) {
+        // Idempotent: a retried "complete" returns the final state.
+        if (
+          order.refund.status === RefundStatus.REFUNDED ||
+          order.refund.status === RefundStatus.PARTIALLY_REFUNDED
+        ) {
+          return res.json({ success: true, order, deduplicated: true });
+        }
+        return res.status(400).json({
+          code: 400,
+          error: "No pending refund exists.",
+        });
+      }
+
+      let transactionId = req.body?.transactionId ?? null;
+      const manual = req.body?.manual === true;
+      const method = order.payment?.method;
+
+      /* Prepaid refunds go back through the gateway unless an operator
+       * explicitly records an already-issued manual refund (with its
+       * reference). COD refunds have no gateway payment, so the operator
+       * supplies the bank/UPI reference (or none for cash). */
+      if (!transactionId && !manual && method === PaymentMethod.RAZORPAY) {
+        const paymentId =
+          order.payment?.razorpayPaymentId ?? order.payment?.transactionId;
+        if (!paymentId) {
+          return res.status(400).json({
+            code: "REFUND_REFERENCE_REQUIRED",
+            error:
+              "No Razorpay payment reference on this order. Pass transactionId or manual:true after issuing the refund.",
+          });
+        }
+        try {
+          const gatewayRefund = await refundRazorpayPayment({
+            paymentId,
+            amountInr: order.refund.amount,
+          });
+          transactionId = gatewayRefund?.id ?? null;
+        } catch (err) {
+          console.error("[orders] gateway refund failed:", err?.message);
+          return res.status(502).json({
+            code: "REFUND_GATEWAY_FAILED",
+            error:
+              err?.message ??
+              "The gateway refund could not be completed. The refund stays pending.",
+          });
+        }
+      }
+
+      if (!transactionId && !manual && method !== PaymentMethod.COD) {
+        return res.status(400).json({
+          code: "REFUND_REFERENCE_REQUIRED",
+          error:
+            "A refund reference is required. Pass transactionId, or manual:true after issuing the refund.",
+        });
+      }
+
+      const updatedOrder = await order.completeRefund({ transactionId });
 
       fireOrderEvent(Evts.ORDER_REFUNDED, updatedOrder, {
         amount: updatedOrder.refund?.amount ?? 0,
+        actorId: req.user?.id ?? null,
+        method,
+        manual,
       });
 
       return res.json({

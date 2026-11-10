@@ -1,6 +1,6 @@
-# RazorBillz Product Document Format (for AI generators)
+# Razorbillz Product Document Format (for AI generators)
 
-This is the canonical format for importing a full product into RazorBillz from a
+This is the canonical format for importing a full product into Razorbillz from a
 single text document. Feed it to the **Import product** dialog on the Create New
 Product / Edit Product admin pages. Supported files: `.md` / `.txt` (this
 format) and `.json` (same shape, raw JSON object).

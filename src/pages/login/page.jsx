@@ -247,7 +247,7 @@ const LoginPage = () => {
   return (
     <AuthLayout
       type="login"
-      title={t("auth.loginTitle", { defaultValue: "Log in to RazorBillz" })}
+      title={t("auth.loginTitle", { defaultValue: "Log in to Razorbillz" })}
       subtitle="Enter your email and password below to access your account."
       seoTitle={t("auth.loginTitle", { defaultValue: "Login" })}
     >

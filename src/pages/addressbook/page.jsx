@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
@@ -180,7 +181,7 @@ const AddressBookPage = () => {
     postalCode: "",
   });
 
-  useEffect(() => {
+  useStrictEffect(() => {
     setMounted(true);
     fetchAddresses().catch(() => {});
   }, [fetchAddresses]);

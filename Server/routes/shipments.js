@@ -30,6 +30,9 @@ import {
   schedulePickup,
   cancelShipment,
   pushReturnOrder,
+  classifyTrackingStatus,
+  appendUniqueHistory,
+  SHIPMENT_CONFIGURATION_MISSING,
 } from "../utils/shipmozo.js";
 import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
 
@@ -41,6 +44,38 @@ function safeEvent(name, payload) {
   } catch (err) {
     console.error(`analytics event ${name} failed:`, err?.message);
   }
+}
+
+/* Shipmozo's own order id (returned by push-order) is required for
+ * follow-up calls; the internal ORD-… id only exists before push. */
+function providerOrderId(order) {
+  return order?.fulfillment?.shipmozoOrderId || order?.id;
+}
+
+function isConfigMissing(err) {
+  return (
+    err?.code === SHIPMENT_CONFIGURATION_MISSING || err?.status === 503
+  );
+}
+
+function sendConfigMissing(res, message) {
+  return res.status(503).json({
+    code: SHIPMENT_CONFIGURATION_MISSING,
+    error:
+      message ??
+      "Shipmozo is not configured. Set SHIPMOZO_PUBLIC_KEY, SHIPMOZO_PRIVATE_KEY and SHIPMOZO_ALLOW_LIVE=true.",
+    configured: false,
+  });
+}
+
+/* A provider response is either success, a stub (missing config), or a
+ * real provider error. Stub is the ONLY case mapped to 503; genuine
+ * failures keep their provider status/message. */
+function sendProviderStub(res, resp, fallback) {
+  if (resp?.stub === true) {
+    return sendConfigMissing(res, resp?.message ?? fallback);
+  }
+  return null;
 }
 
 import { openAddressObject } from "../utils/crypto/index.js";
@@ -128,8 +163,11 @@ router.post(
         pickupPincode,
         deliveryPincode,
       });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — serviceability unavailable.");
+      if (stub) return stub;
       return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(400)
         .json({ code: 400, error: err?.message ?? "Serviceability check failed" });
@@ -159,7 +197,7 @@ router.post(
         ? order.payment?.method === "cod"
         : req.body?.cod === true;
       const resp = await rateCalculator({
-        orderId: order?.id ?? req.body?.orderId ?? "",
+        orderId: order ? providerOrderId(order) : req.body?.orderId ?? "",
         pickupPincode:
           req.body?.pickupPincode ?? process.env.SHIPMOZO_PICKUP_PINCODE,
         deliveryPincode:
@@ -177,8 +215,11 @@ router.post(
             Math.round(Number(order?.fulfillment?.packageWeightKg ?? 0.5) * 1000),
           ),
       });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — rate lookup unavailable.");
+      if (stub) return stub;
       return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(400)
         .json({ code: 400, error: err?.message ?? "Rate lookup failed" });
@@ -228,6 +269,10 @@ router.post(
         userId: order.userId,
       });
 
+      if (!shipmozoConfig().configured) {
+        return sendConfigMissing(res);
+      }
+
       // 1. push-order (PDF response: { Info, order_id, reference_id })
       let payload;
       try {
@@ -236,6 +281,7 @@ router.post(
           warehouseId: req.body?.warehouseId,
         });
       } catch (err) {
+        if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
         order.fulfillment.shipmentFailure = err?.message;
         await order.save();
         return res.status(400).json({ code: 400, error: err?.message });
@@ -252,7 +298,7 @@ router.post(
           stub: pushed?.stub === true,
         });
         return res.status(pushed?.stub ? 503 : 502).json({
-          code: pushed?.stub ? 503 : 502,
+          code: pushed?.stub ? SHIPMENT_CONFIGURATION_MISSING : 502,
           error: order.fulfillment.shipmentFailure,
           stub: pushed?.stub === true,
           provider: pushed,
@@ -271,11 +317,13 @@ router.post(
       if (req.body?.pushOnly !== true) {
         if (req.body?.courierId !== undefined) {
           assignment = await assignCourier({
-            orderId: order.id,
+            orderId: providerOrderId(order),
             courierId: req.body.courierId,
           });
         } else if (req.body?.autoAssign !== false) {
-          assignment = await autoAssignCourier({ orderId: order.id });
+          assignment = await autoAssignCourier({
+            orderId: providerOrderId(order),
+          });
         }
         if (assignment) {
           if (isShipmozoSuccess(assignment)) {
@@ -322,6 +370,7 @@ router.post(
         provider: { push: pushed, assignment },
       });
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       console.error("Shipment create failed:", err);
       safeEvent(Evts.SHIPMENT_CREATE_FAILED, {
         orderId: req.params.orderId,
@@ -381,7 +430,7 @@ router.get(
       }
       const history = normalizeTrackingHistory(resp);
       if (history.length) {
-        order.fulfillment.history.push(...history);
+        appendUniqueHistory(order, history);
       }
       const tdata = resp.data ?? {};
       if (tdata.courier) order.fulfillment.courierName = tdata.courier;
@@ -391,8 +440,9 @@ router.get(
           order.fulfillment.estimatedDelivery = eta;
         }
       }
-      const latest = String(tdata.current_status ?? "").toLowerCase();
-      if (latest.includes("deliver") && order.status === OrderStatus.SHIPPED) {
+      const currentStatus = tdata.current_status ?? null;
+      const classification = classifyTrackingStatus(currentStatus);
+      if (classification === "delivered" && order.status === OrderStatus.SHIPPED) {
         try {
           await order.markAsDelivered({ actor: "system" });
           safeEvent(Evts.SHIPMENT_DELIVERED, {
@@ -410,15 +460,22 @@ router.get(
         } catch {
           // keep tracking data even if transition invalid
         }
-      } else if (latest.includes("cancel")) {
+      } else if (classification === "cancelled") {
         safeEvent(Evts.SHIPMENT_CANCELLED, {
           orderId: order.id,
           userId: order.userId,
         });
-      } else if (latest.includes("rto") || latest.includes("return")) {
+      } else if (classification === "rto") {
         safeEvent(Evts.SHIPMENT_RTO, {
           orderId: order.id,
           userId: order.userId,
+        });
+      } else if (classification === "out_for_delivery") {
+        safeEvent(Evts.SHIPMENT_TRACK_SYNCED, {
+          orderId: order.id,
+          userId: order.userId,
+          awb,
+          note: "out for delivery (not delivered yet)",
         });
       }
       order.fulfillment.lastSyncAt = new Date();
@@ -433,7 +490,8 @@ router.get(
         trackingAvailable: true,
         awb,
         courier: order.fulfillment.courierName,
-        currentStatus: tdata.current_status ?? null,
+        currentStatus,
+        statusCategory: classification,
         expectedDeliveryDate: tdata.expected_delivery_date ?? null,
         trackingUrl: order.fulfillment.trackingUrl,
         history: order.fulfillment.history,
@@ -468,8 +526,11 @@ router.get(
         return res.status(404).json({ code: 404, error: "No AWB for this order yet" });
       }
       const resp = await getOrderLabel(awb, { pdf: req.query.pdf === "true" });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — labels unavailable.");
+      if (stub) return stub;
       return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(500)
         .json({ code: 500, error: err?.message ?? "Label fetch failed" });
@@ -484,8 +545,27 @@ router.get(
   requireAdmin,
   requirePermission({ shipping: ["view"] }),
   async (req, res) => {
-    const resp = await getOrderDetail(req.params.orderId);
-    return res.status(200).json(resp);
+    try {
+      const order = await loadOrderForAdmin(req.params.orderId);
+      if (!order) {
+        return res.status(404).json({ code: 404, error: "Order not found" });
+      }
+      if (!order.fulfillment?.shipmozoOrderId) {
+        return res.status(409).json({
+          code: "SHIPMENT_NOT_PUSHED",
+          error: "This order has not been pushed to Shipmozo yet.",
+        });
+      }
+      const resp = await getOrderDetail(providerOrderId(order));
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — order detail unavailable.");
+      if (stub) return stub;
+      return res.status(200).json(resp);
+    } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
+      return res
+        .status(500)
+        .json({ code: 500, error: err?.message ?? "Order detail fetch failed" });
+    }
   },
 );
 
@@ -497,27 +577,37 @@ router.post(
   requireAdmin,
   requirePermission({ shipping: ["update"] }),
   async (req, res) => {
-    const order = await loadOrderForAdmin(req.params.orderId);
-    if (!order) {
-      return res.status(404).json({ code: 404, error: "Order not found" });
+    try {
+      const order = await loadOrderForAdmin(req.params.orderId);
+      if (!order) {
+        return res.status(404).json({ code: 404, error: "Order not found" });
+      }
+      if (!shipmozoConfig().configured) return sendConfigMissing(res);
+      const resp = await schedulePickup({ orderId: providerOrderId(order) });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — pickup unavailable.");
+      if (stub) return stub;
+      if (isShipmozoSuccess(resp)) {
+        const data = resp.data ?? {};
+        applyAwbToOrder(order, {
+          awbNumber: data.awb_number ?? null,
+          courier: data.courier ?? null,
+          lrNumber: data.lr_number ?? null,
+          source: "api",
+        });
+        await order.save();
+        safeEvent(Evts.SHIPMENT_PICKUP, {
+          orderId: order.id,
+          userId: order.userId,
+          awb: data.awb_number,
+        });
+      }
+      return res.status(200).json(resp);
+    } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
+      return res
+        .status(502)
+        .json({ code: 502, error: err?.message ?? "Pickup scheduling failed" });
     }
-    const resp = await schedulePickup({ orderId: order.id });
-    if (isShipmozoSuccess(resp)) {
-      const data = resp.data ?? {};
-      applyAwbToOrder(order, {
-        awbNumber: data.awb_number ?? null,
-        courier: data.courier ?? null,
-        lrNumber: data.lr_number ?? null,
-        source: "api",
-      });
-      await order.save();
-      safeEvent(Evts.SHIPMENT_PICKUP, {
-        orderId: order.id,
-        userId: order.userId,
-        awb: data.awb_number,
-      });
-    }
-    return res.status(200).json(resp);
   },
 );
 
@@ -527,35 +617,48 @@ router.post(
   requireAdmin,
   requirePermission({ shipping: ["update"] }),
   async (req, res) => {
-    const order = await loadOrderForAdmin(req.params.orderId);
-    if (!order) {
-      return res.status(404).json({ code: 404, error: "Order not found" });
-    }
-    const awbNumber =
-      req.body?.awbNumber ??
-      order.fulfillment?.awb ??
-      order.fulfillment?.trackingNumber;
-    if (!awbNumber) {
-      return res.status(400).json({
-        code: 400,
-        error: "awbNumber is required (order has no AWB yet)",
+    try {
+      const order = await loadOrderForAdmin(req.params.orderId);
+      if (!order) {
+        return res.status(404).json({ code: 404, error: "Order not found" });
+      }
+      const awbNumber =
+        req.body?.awbNumber ??
+        order.fulfillment?.awb ??
+        order.fulfillment?.trackingNumber;
+      if (!awbNumber) {
+        return res.status(400).json({
+          code: 400,
+          error: "awbNumber is required (order has no AWB yet)",
+        });
+      }
+      if (!shipmozoConfig().configured) return sendConfigMissing(res);
+      const resp = await cancelShipment({
+        orderId: providerOrderId(order),
+        awbNumber,
       });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — cancellation unavailable.");
+      if (stub) return stub;
+      if (isShipmozoSuccess(resp)) {
+        order.fulfillment.history.push({
+          status: "shipment_cancelled",
+          message: `Shipment cancelled (AWB ${awbNumber})`,
+          timestamp: new Date(),
+          source: "admin",
+        });
+        await order.save();
+        safeEvent(Evts.SHIPMENT_CANCELLED, {
+          orderId: order.id,
+          userId: order.userId,
+        });
+      }
+      return res.status(200).json(resp);
+    } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
+      return res
+        .status(502)
+        .json({ code: 502, error: err?.message ?? "Shipment cancellation failed" });
     }
-    const resp = await cancelShipment({ orderId: order.id, awbNumber });
-    if (isShipmozoSuccess(resp)) {
-      order.fulfillment.history.push({
-        status: "shipment_cancelled",
-        message: `Shipment cancelled (AWB ${awbNumber})`,
-        timestamp: new Date(),
-        source: "admin",
-      });
-      await order.save();
-      safeEvent(Evts.SHIPMENT_CANCELLED, {
-        orderId: order.id,
-        userId: order.userId,
-      });
-    }
-    return res.status(200).json(resp);
   },
 );
 
@@ -566,7 +669,10 @@ router.get(
   requireAdmin,
   requirePermission({ shipping: ["view"] }),
   async (_req, res) => {
-    return res.status(200).json(await getWarehouses());
+    const resp = await getWarehouses();
+    const stub = sendProviderStub(res, resp, "Shipmozo not configured — warehouses unavailable.");
+    if (stub) return stub;
+    return res.status(200).json(resp);
   },
 );
 
@@ -578,16 +684,15 @@ router.get(
   requirePermission({ shipping: ["view"] }),
   async (req, res) => {
     const { from, to, per_page, perPage, page } = req.query ?? {};
-    return res
-      .status(200)
-      .json(
-        await getNdrOrders({
-          from,
-          to,
-          perPage: per_page ?? perPage,
-          page,
-        }),
-      );
+    const resp = await getNdrOrders({
+      from,
+      to,
+      perPage: per_page ?? perPage,
+      page,
+    });
+    const stub = sendProviderStub(res, resp, "Shipmozo not configured — NDR list unavailable.");
+    if (stub) return stub;
+    return res.status(200).json(resp);
   },
 );
 
@@ -603,6 +708,8 @@ router.post(
         awbNumber: req.params.awb,
         action: req.body?.action,
       });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — NDR action unavailable.");
+      if (stub) return stub;
       if (isShipmozoSuccess(resp)) {
         const order = await OrderModel.findOne({
           "fulfillment.awb": req.params.awb,
@@ -626,6 +733,7 @@ router.post(
       }
       return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(400)
         .json({ code: 400, error: err?.message ?? "NDR action failed" });
@@ -642,8 +750,12 @@ router.post(
   async (req, res) => {
     try {
       const { awbNumbers } = req.body ?? {};
-      return res.status(200).json(await generateManifest(awbNumbers));
+      const resp = await generateManifest(awbNumbers);
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — manifest unavailable.");
+      if (stub) return stub;
+      return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(400)
         .json({ code: 400, error: err?.message ?? "Manifest failed" });
@@ -657,7 +769,10 @@ router.get(
   requireAdmin,
   requirePermission({ shipping: ["view"] }),
   async (_req, res) => {
-    return res.status(200).json(await getReturnReasons());
+    const resp = await getReturnReasons();
+    const stub = sendProviderStub(res, resp, "Shipmozo not configured — return reasons unavailable.");
+    if (stub) return stub;
+    return res.status(200).json(resp);
   },
 );
 
@@ -681,7 +796,7 @@ router.post(
         });
       }
       const resp = await pushReturnOrder({
-        orderId: order.id,
+        orderId: providerOrderId(order),
         pickup,
         productDetail: (order.products ?? []).map((p) => ({
           name: p.title,
@@ -702,8 +817,11 @@ router.post(
         customerRequest: customerRequest ?? "REFUND",
         reasonComment: reasonComment ?? "",
       });
+      const stub = sendProviderStub(res, resp, "Shipmozo not configured — return push unavailable.");
+      if (stub) return stub;
       return res.status(200).json(resp);
     } catch (err) {
+      if (isConfigMissing(err)) return sendConfigMissing(res, err?.message);
       return res
         .status(400)
         .json({ code: 400, error: err?.message ?? "Push return failed" });
