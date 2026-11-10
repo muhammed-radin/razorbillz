@@ -39,7 +39,7 @@ router.get(
   async (req, res) => {
     try {
       const analytics = await SiteAnalyticsModel.findOne({
-        id: "global_counters",
+        _id: "global_counters",
       });
       if (!analytics) {
         // Empty database (fresh Atlas cluster, events not yet flushed):
@@ -126,17 +126,25 @@ router.get(
     const start = req.query.start ? new Date(req.query.start) : null;
     const end = req.query.end ? new Date(req.query.end) : null;
 
-    let query = {
-      $or: [
-        { happenedAt: { $gte: start, $lte: end } },
-        { createdAt: { $gte: start, $lte: end } },
-        { updatedAt: { $gte: start, $lte: end } },
-      ],
-    };
+    // Daily documents are keyed by "YYYY-MM-DD", so a date range is a
+    // simple _id range (no full collection scan).
+    const query = {};
+    if (start && !Number.isNaN(start.getTime())) {
+      query._id = {
+        ...(query._id ?? {}),
+        $gte: start.toISOString().slice(0, 10),
+      };
+    }
+    if (end && !Number.isNaN(end.getTime())) {
+      query._id = {
+        ...(query._id ?? {}),
+        $lte: end.toISOString().slice(0, 10),
+      };
+    }
 
     try {
-      const events = await DailyAnalyticsModel.find(query);
-      res.json(calculateAnalyticsFrom(events) || []);
+      const events = await DailyAnalyticsModel.find(query).lean();
+      res.json(calculateAnalyticsFrom(events));
     } catch (error) {
       console.error("Error fetching events:", error);
       res.status(500).json({ error: "Failed to fetch events" });
@@ -185,27 +193,29 @@ router.get(
       if (end && !Number.isNaN(end.getTime())) {
         match.createdAt = { ...(match.createdAt ?? {}), $lt: end };
       }
+      // $dateToString works on MongoDB 4.0+ (unlike $dateTrunc which
+      // needs 5.0). The bucket keys are ISO strings that sort correctly.
       const dateTrunc =
         granularity === "month"
           ? {
-              $dateTrunc: {
+              $dateToString: {
                 date: "$createdAt",
-                unit: "month",
+                format: "%Y-%m",
                 timezone: "UTC",
               },
             }
           : granularity === "week"
             ? {
-                $dateTrunc: {
+                $dateToString: {
                   date: "$createdAt",
-                  unit: "week",
+                  format: "%G-W%V",
                   timezone: "UTC",
                 },
               }
             : {
-                $dateTrunc: {
+                $dateToString: {
                   date: "$createdAt",
-                  unit: "day",
+                  format: "%Y-%m-%d",
                   timezone: "UTC",
                 },
               };

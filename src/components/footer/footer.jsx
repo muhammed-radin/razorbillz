@@ -104,7 +104,7 @@ export const Footer = () => {
                 {t("footer.newsletterBadge")}
               </Badge>
               {/* h2: the footer is a top-level landmark, and on pages whose
-               * deepest heading is an h1 (404, forgot-password) an h3 here
+               * deepest heading is an h1 (404, reset-password) an h3 here
                * would skip a level. */}
               <h2 className="mt-3 text-xl sm:text-2xl font-extrabold tracking-tight">
                 {t("footer.newsletterTitle")}

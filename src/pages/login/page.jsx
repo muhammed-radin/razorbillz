@@ -19,7 +19,7 @@ import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import onUserGoogleSignIn from "@/utils/hooks/googleProviderSignIn";
-import { authClient } from "@/lib/auth-client";
+import { authClient, resendVerification } from "@/lib/auth-client";
 import {
   Eye,
   EyeOff,
@@ -32,6 +32,8 @@ import {
 import GoogleLogo from "@/components/auth/google-logo";
 import AuthLayout from "@/components/auth/auth-layout";
 import { api } from "@/utils/api";
+import { alert } from "@/components/dialog-alert-provider";
+import { origin } from "@shared/utils/route-util";
 
 const LoginPage = () => {
   const { t } = useTranslation();
@@ -41,6 +43,8 @@ const LoginPage = () => {
   const [formShake, setFormShake] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
 
+  const [isMailSent, setIsMailSent] = useState(false); // State to track if the verification email has been sent
+
   // ── Memoized Zod Schema ──
   const formSchema = useMemo(
     () =>
@@ -48,16 +52,17 @@ const LoginPage = () => {
         email: z
           .string()
           .email(
-            t("auth.validationEmail", {
-              default: "Please enter a valid email address",
-            }),
+            t("auth.validationEmail", "Please enter a valid email address"),
           ),
-        password: z.string().min(
-          8,
-          t("auth.validationPassword", {
-            default: "Password must be at least 8 characters long",
-          }),
-        ),
+        password: z
+          .string()
+          .min(
+            8,
+            t(
+              "auth.validationPassword",
+              "Password must be at least 8 characters long",
+            ),
+          ),
       }),
     [t],
   );
@@ -66,6 +71,53 @@ const LoginPage = () => {
     defaultValues: { email: "", password: "" },
     resolver: zodResolver(formSchema),
   });
+
+  const openVerificationAlert = function () {
+    alert.info({
+      title: t("auth.verificationEmailSent", "Verification Email Sent"),
+      description: t(
+        "auth.verificationEmailDescription",
+        "A verification email has been sent to your email address. Please check your inbox and follow the instructions to verify your account.",
+      ),
+      buttonText: t("auth.resendEmail", "Resend Email"),
+      onClose: async (confirmed) => {
+        if (confirmed) {
+          const email = form.getValues("email");
+          if (email) {
+            await resendVerification(email);
+            setIsMailSent(true); // Update state to indicate that the email has been sent
+          }
+        }
+      },
+    });
+  };
+
+  const openFrogetPasswordAlert = function () {
+    alert.info({
+      title: t("auth.forgotPasswordAlertTitle", "Forgot Password"),
+      description: t(
+        "auth.forgotPasswordAlertDescription",
+        "If you've forgotten your password, you can reset it by clicking the button below. A password reset link will be sent to your registered email address.",
+      ),
+      buttonText: t("auth.resetPassword", "Reset Password"),
+      onClose: async (confirmed) => {
+        if (confirmed) {
+          const email = form.getValues("email");
+          if (email) {
+            await authClient.forgotPassword({
+              email,
+              redirectTo: origin().path("/reset-password").hashPathURL(),
+            });
+            toast.success(
+              t("auth.passwordResetEmailSent", {
+                defaultValue: "Password reset email sent successfully.",
+              }),
+            );
+          }
+        }
+      },
+    });
+  };
 
   // ── Submit handler ──
   const submitForm = useCallback(
@@ -77,9 +129,7 @@ const LoginPage = () => {
               .email(data, {
                 onSuccess: (payload) => {
                   if (payload.response.status === 200) {
-                    resolveui(
-                      t("auth.loginSuccess", { default: "Login Successful" }),
-                    );
+                    resolveui(t("auth.loginSuccess", "Login Successful"));
                     api.clearSessionCache();
                     navigate("/");
                   } else {
@@ -92,12 +142,17 @@ const LoginPage = () => {
                 },
               })
               .then(({ error }) => {
-                if (error) rejectui(error);
+                if (error) {
+                  if (error.code === "EMAIL_NOT_VERIFIED") {
+                    openVerificationAlert();
+                  }
+                  rejectui(error);
+                }
               })
               .catch((error) => rejectui(error));
           }),
         {
-          loading: t("auth.loggingIn", { default: "Logging in..." }),
+          loading: t("auth.loggingIn", "Logging in..."),
           success: (msg) => {
             setIsSubmitting(false);
             return `${msg}`;
@@ -115,7 +170,7 @@ const LoginPage = () => {
               "Unknown error";
             return t("auth.loginFailed", {
               error: message,
-              default: `Login failed: ${message}`,
+              defaultValue: `Login failed: ${message}`,
             });
           },
         },
@@ -162,14 +217,14 @@ const LoginPage = () => {
       if (authParam === "google" && successParam === "true") {
         toast.success(
           t("auth.googleSignInSuccess", {
-            default: "Google sign-in successful",
+            defaultValue: "Google sign-in successful",
           }),
         );
         navigate("/");
       } else if (authParam === "google" && successParam === "false") {
         toast.error(
           t("auth.googleSignInFailed", {
-            default: "Google sign-in failed, Try again.",
+            defaultValue: "Google sign-in failed, Try again.",
           }),
         );
       }
@@ -192,9 +247,9 @@ const LoginPage = () => {
   return (
     <AuthLayout
       type="login"
-      title={t("auth.loginTitle", { default: "Log in to RazorBillz" })}
+      title={t("auth.loginTitle", { defaultValue: "Log in to Razorbillz" })}
       subtitle="Enter your email and password below to access your account."
-      seoTitle={t("auth.loginTitle", { default: "Login" })}
+      seoTitle={t("auth.loginTitle", { defaultValue: "Login" })}
     >
       <div className="space-y-3 sm:space-y-4">
         {/* ── Google OAuth Button ── */}
@@ -206,7 +261,7 @@ const LoginPage = () => {
           disabled={isSubmitting}
           onClick={handleGoogleSignIn}
           aria-label={t("auth.continueWithGoogle", {
-            default: "Continue with Google",
+            defaultValue: "Continue with Google",
           })}
         >
           {isSubmitting ? (
@@ -215,7 +270,9 @@ const LoginPage = () => {
             <GoogleLogo />
           )}
           <span>
-            {t("auth.continueWithGoogle", { default: "Continue with Google" })}
+            {t("auth.continueWithGoogle", {
+              defaultValue: "Continue with Google",
+            })}
           </span>
         </Button>
 
@@ -223,7 +280,7 @@ const LoginPage = () => {
         <div className="relative my-2 sm:my-3 flex items-center justify-center">
           <Separator className="w-full" />
           <span className="absolute bg-background px-3 text-[10px] sm:text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            {t("auth.or", { default: "OR" })}
+            {t("auth.or", { defaultValue: "OR" })}
           </span>
         </div>
 
@@ -242,7 +299,7 @@ const LoginPage = () => {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-xs font-semibold">
-                    {t("auth.email", { default: "Email" })}
+                    {t("auth.email", { defaultValueValue: "Email" })}
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
@@ -252,7 +309,7 @@ const LoginPage = () => {
                         inputMode="email"
                         autoComplete="email"
                         placeholder={t("auth.emailPlaceholder", {
-                          default: "you@example.com",
+                          defaultValue: "you@example.com",
                         })}
                         className="pl-9 h-9 sm:h-10 text-xs sm:text-sm rounded-lg bg-background border-border/80 focus-visible:ring-1 transition-all"
                         disabled={isSubmitting}
@@ -274,15 +331,15 @@ const LoginPage = () => {
                 <FormItem>
                   <div className="flex items-center justify-between">
                     <FormLabel className="text-xs font-semibold">
-                      {t("auth.password", { default: "Password" })}
+                      {t("auth.password", { defaultValue: "Password" })}
                     </FormLabel>
                     <Link
-                      to="/forgot-password"
+                      to="/reset-password"
                       className="text-[11px] sm:text-xs text-primary hover:underline underline-offset-4 font-medium transition-colors"
                       tabIndex={isSubmitting ? -1 : 0}
                     >
                       {t("auth.forgotPassword", {
-                        default: "Forgot password?",
+                        defaultValue: "Forgot password?",
                       })}
                     </Link>
                   </div>
@@ -355,7 +412,9 @@ const LoginPage = () => {
                 <LogIn className="h-4 w-4" />
               )}
               <span>
-                {t("auth.continueWithEmail", { default: "Log In with Email" })}
+                {t("auth.continueWithEmail", {
+                  defaultValue: "Log In with Email",
+                })}
               </span>
             </Button>
           </form>
@@ -364,12 +423,14 @@ const LoginPage = () => {
         {/* ── Sign-up switch link ── */}
         <div className="pt-2 text-center">
           <p className="text-xs sm:text-sm text-muted-foreground">
-            {t("auth.dontHaveAccount", { default: "Don't have an account?" })}{" "}
+            {t("auth.dontHaveAccount", {
+              defaultValue: "Don't have an account?",
+            })}{" "}
             <Link
               to="/signup"
               className="font-semibold text-foreground underline underline-offset-4 hover:text-primary transition-colors ml-1"
             >
-              {t("auth.createAccount", { default: "Create account" })}
+              {t("auth.createAccount", { defaultValue: "Create account" })}
             </Link>
           </p>
         </div>

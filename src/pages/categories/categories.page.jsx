@@ -2,11 +2,12 @@ import { GridCard } from "@/components/content-grid";
 import { Skeleton } from "@/components/ui/skeleton";
 import { api } from "@/utils/api";
 import { Folder, Heart } from "lucide-react";
-import { memo, useEffect, useState } from "react";
+import { memo, useState } from "react";
 import { StoreMeta } from "@/components/store-meta";
 import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { resolveIcon } from "@/lib/icons";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 
 function CategoriesPage() {
   const { t } = useTranslation();
@@ -31,7 +32,7 @@ function CategoriesPage() {
     }
   };
 
-  useEffect(() => {
+  useStrictEffect(() => {
     api.client
       .get(api.categories())
       .then((response) => {

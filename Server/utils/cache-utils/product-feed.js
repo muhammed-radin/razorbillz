@@ -29,7 +29,7 @@ productFeedCache.toUpdate(async function populateFeed(memory) {
 
   // find rated
   const ratedProducts = await ProductModel.find()
-    .sort({ rating: -1 })
+    .sort({ "metrics.rating": -1, rating: -1 })
     .limit(20);
   const minimalRatedProducts = ratedProducts.map(
     (product) => new MinimalProduct(product),
@@ -42,9 +42,12 @@ productFeedCache.toUpdate(async function populateFeed(memory) {
   const trendingProducts = await ProductModel.find({
     createdAt: { $gte: sevenDaysAgo },
     isActive: true,
-    views: { $gt: 0 },
+    $or: [
+      { "metrics.allViews": { $gt: 0 } },
+      { views: { $gt: 0 } },
+    ],
   })
-    .sort({ views: -1 })
+    .sort({ "metrics.allViews": -1, views: -1 })
     .limit(20);
   const minimalTrendingProducts = trendingProducts.map(
     (product) => new MinimalProduct(product),
@@ -80,7 +83,7 @@ productFeedCache.toUpdate(async function populateFeed(memory) {
   const featuredViewedProducts = await ProductModel.find({
     "specialInfo.featured": true,
   })
-    .sort({ views: -1 })
+    .sort({ "metrics.allViews": -1, views: -1 })
     .limit(3);
   const minimalFeaturedViewedProducts = featuredViewedProducts.map(
     (product) => new MinimalProduct(product),

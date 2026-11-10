@@ -1,4 +1,3 @@
-import { db } from "./db.js";
 import {
   OrderModel,
   OrderStatus,
@@ -12,12 +11,25 @@ import {
 } from "../models/schema/order.js";
 import { reserveStock, releaseStock } from "./inventory.js";
 import { evt, Evts, OrderEvent } from "./events.manage.js";
+import {
+  openAddressObject,
+  sealAddressObject,
+} from "./crypto/index.js";
 
 /* =========================================================
  * Single order-creation path for COD (POST /orders) and
  * verified prepaid (payments verify/webhook). Stock is
  * reserved BEFORE the document is created and released if
  * creation fails — attempts/failed payments never touch stock.
+ *
+ * Address snapshots (name/street/city/state/postalCode/…) are
+ * SEALED at rest (envelope AES-GCM + blind indexes) and only
+ * opened transiently when an operator/courier flow needs them:
+ *   - decryptOrderAddresses(order) for read endpoints
+ *   - shipmozo payload build (label creation) opens on the fly
+ * The client submits plaintext addresses over TLS only at these
+ * request boundaries (just-in-time reveal); analytics events fire
+ * with the SEALED snapshot so plaintext never spreads sideways.
  * ========================================================= */
 
 export function newOrderId() {
@@ -65,13 +77,16 @@ function buildOrderData({
     fulfillment: {
       status: FulfillmentStatus.UNFULFILLED,
       packageWeightKg: priced.weightKg,
+      // Kept plaintext intentionally: courier-ops queries (rate quotes,
+      // logistics filters) key on pincode. Personal delivery details
+      // (name/phone/street/email) are sealed inside shippingAddress.
       deliveryPincode: shippingAddress?.postalCode ?? null,
     },
     cancellation: { status: CancellationStatus.NONE },
     return: { status: ReturnStatus.NONE },
     refund: { status: RefundStatus.NONE },
-    shippingAddress,
-    billingAddress,
+    shippingAddress: sealAddressObject(shippingAddress),
+    billingAddress: sealAddressObject(billingAddress),
   };
 }
 
@@ -126,31 +141,90 @@ export async function createOrderRecord({
       Evts.ORDER_PLACED,
       new OrderEvent({ type: Evts.ORDER_PLACED, order: order.toObject() }),
     );
+
+    if (markPaid) {
+      evt.fire(
+        Evts.ORDER_PAID,
+        new OrderEvent({ type: Evts.ORDER_PAID, order: order.toObject() }),
+      );
+    }
+
     if (method === PaymentMethod.COD) {
-      evt.fire(Evts.COD_CREATED, { orderId: order.id, userId });
-      evt.fire(Evts.COD_COLLECTION_PENDING, { orderId: order.id, userId });
+      evt.fire(Evts.COD_CREATED, {
+        orderId: order.id,
+        userId,
+        amount: order.totalAmount,
+      });
+      evt.fire(Evts.COD_COLLECTION_PENDING, {
+        orderId: order.id,
+        userId,
+        amount: order.totalAmount,
+      });
     }
   } catch (err) {
     console.error("[orderFactory] analytics event failed:", err?.message);
   }
-  try {
-    await db
-      .collection("users")
-      .updateOne({ id: userId }, { $inc: { totalOrders: 1 } });
-  } catch (err) {
-    console.error("[orderFactory] user stats update failed:", err?.message);
-  }
+
+  // totalOrders/totalSpent are maintained by the buffered user-stats
+  // listener for ORDER_PLACED / COD_COLLECTED / ORDER_REFUNDED.
   return order;
 }
 
-/* Release reserved stock after a terminal cancellation.
- * Best-effort: failures are logged, never thrown. */
-export async function releaseOrderStock(order) {
+/* Release reserved stock after a terminal cancellation or completed
+ * return. Idempotent per order so a double click / retried request
+ * cannot inflate inventory. Best-effort: failures are logged, never
+ * thrown, and the order is left unmarked so a later retry can succeed. */
+export async function releaseOrderStock(
+  order,
+  { reason = "cancellation" } = {},
+) {
+  if (!order) return order;
+  const isReturn = reason === "return";
+  const marker = isReturn ? "returnStockReleasedAt" : "stockReleasedAt";
+
+  if (order[marker]) return order;
+
   try {
     await releaseStock(order?.products ?? []);
   } catch (err) {
     console.error("[orderFactory] stock release failed:", err?.message);
+    return order;
   }
+
+  if (typeof order.save === "function") {
+    order[marker] = new Date();
+    try {
+      await order.save();
+    } catch (err) {
+      console.error("[orderFactory] stock release marker failed:", err?.message);
+    }
+  }
+
+  return order;
 }
 
-export default { newOrderId, createOrderRecord, releaseOrderStock };
+/* Open sealed order addresses for read/consumer paths. Returns a new
+ * object; tolerant of legacy (plaintext) snapshots stored pre-upgrade
+ * (openAddressObject passes non-envelope values through). */
+export function decryptOrderAddresses(order) {
+  if (!order) return order;
+  const plain =
+    typeof order.toObject === "function" ? order.toObject() : order;
+  const out = { ...plain };
+  if (plain.shippingAddress) {
+    out.shippingAddress = openAddressObject(plain.shippingAddress);
+  }
+  if (plain.billingAddress) {
+    out.billingAddress = openAddressObject(plain.billingAddress);
+  }
+  delete out.shippingAddress?.searchIdx;
+  delete out.billingAddress?.searchIdx;
+  return out;
+}
+
+export default {
+  newOrderId,
+  createOrderRecord,
+  releaseOrderStock,
+  decryptOrderAddresses,
+};

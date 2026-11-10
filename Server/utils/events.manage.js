@@ -24,6 +24,8 @@ class ProductEvent extends ClassicEvent {
     reqPath = null,
     userId = null,
     actorId = null,
+    productId = null,
+    isGuest = false,
   }) {
     super({
       type,
@@ -35,6 +37,8 @@ class ProductEvent extends ClassicEvent {
 
       userId,
       actorId,
+      isGuest,
+      productId: productId || product?.id || response?.productId || null,
     });
     this.global = true;
     this.product = product;
@@ -113,16 +117,17 @@ class RecordEvent extends ClassicEvent {
 }
 
 class SessionEvent extends ClassicEvent {
-  constructor({ type, session }) {
+  constructor({ type, session, isGuest = false }) {
     super({
       type,
       isMajor: true,
       sector: "session",
       content: { ...session },
-      userId: session.userId,
-      actorId: session.userId,
+      userId: session.userId || session.user?.id || null,
+      actorId: session.userId || session.user?.id || null,
       isError: false,
       userAgent: session.userAgent,
+      isGuest: isGuest || session.isAnonymous || session.user?.isAnonymous || false,
     });
     this.global = true;
     this.session = session;
@@ -225,6 +230,8 @@ const GlobalEventNames = {
 
   // Order events
   ORDER_PLACED: "order_placed",
+  ORDER_PAID: "order_paid",
+  ORDER_REFUNDED: "order_refunded",
   ORDER_UPDATED: "order_updated",
   ORDER_CANCELLED: "order_cancelled",
   ORDER_COMPLETED: "order_completed",
@@ -297,6 +304,7 @@ const GlobalEventNames = {
 
   // Non Major: User events
   USER_LOGGED_OUT_REQUEST: "user_logged_out_request",
+  USER_LOGIN_FAILED: "user_login_failed",
 
   // Non Major: Product events
   PRODUCT_SEARCHED_FROM_CACHE: "site_searched_from_cache",
@@ -307,13 +315,147 @@ const GlobalEventNames = {
   PRODUCT_CATEGORY_UPDATED: "product_category_updated",
   PRODUCT_TAGS_UPDATED: "product_tags_updated",
   PRODUCT_DISCOUNT_UPDATED: "product_discount_updated",
+  PRODUCT_RATING_UPDATED: "product_rating_updated",
   PRODUCT_UNRATED: "product_unrated",
 
   // Flush events
   FLUSH_REQUESTED: "flush_requested",
 
   INTERACTION_RECORDED: "interaction_recorded",
+  ANALYTICS_RECONCILED: "analytics_reconciled",
 };
+
+/* Events that are important enough to be stored in the activity log
+ * (`activities`) even when a caller fires them as a plain payload instead
+ * of a ClassicEvent subclass. This keeps the global manager authoritative:
+ * no feature has to remember to construct a special class. */
+const MAJOR_EVENT_TYPES = new Set([
+  GlobalEventNames.SITE_VIEWED,
+  GlobalEventNames.ERROR,
+  GlobalEventNames.PRODUCT_CREATED,
+  GlobalEventNames.PRODUCT_UPDATED,
+  GlobalEventNames.PRODUCT_DELETED,
+  GlobalEventNames.PRODUCT_SEARCHED,
+  GlobalEventNames.PRODUCT_VIEWED,
+  GlobalEventNames.PRODUCT_RATED,
+  GlobalEventNames.PRODUCT_RATING_UPDATED,
+  GlobalEventNames.PRODUCT_SHARED,
+  GlobalEventNames.PRODUCT_WISHLISTED,
+  GlobalEventNames.PRODUCT_CARTED,
+  GlobalEventNames.PRODUCT_COMMENTED,
+  GlobalEventNames.PRODUCT_COMMENT_UPDATED,
+  GlobalEventNames.PRODUCT_COMMENT_DELETED,
+  GlobalEventNames.PRODUCT_COMMENT_ERROR,
+  GlobalEventNames.PRODUCT_LOW_STOCK,
+  GlobalEventNames.PRODUCT_OUT_OF_STOCK,
+  GlobalEventNames.USER_REGISTERED,
+  GlobalEventNames.USER_LOGGED_IN,
+  GlobalEventNames.USER_LOGGED_OUT,
+  GlobalEventNames.USER_PROFILE_UPDATED,
+  GlobalEventNames.USER_PASSWORD_CHANGED,
+  GlobalEventNames.USER_DELETED,
+  GlobalEventNames.USER_LOGIN_FAILED,
+  GlobalEventNames.ORDER_PLACED,
+  GlobalEventNames.ORDER_PAID,
+  GlobalEventNames.ORDER_REFUNDED,
+  GlobalEventNames.ORDER_UPDATED,
+  GlobalEventNames.ORDER_CANCELLED,
+  GlobalEventNames.ORDER_COMPLETED,
+  GlobalEventNames.ORDER_RETURN_REQUESTED,
+  GlobalEventNames.ORDER_CREATE_ATTEMPT,
+  GlobalEventNames.ORDER_CREATE_FAILED,
+  GlobalEventNames.ORDER_STATUS_CHANGED,
+  GlobalEventNames.CHECKOUT_STARTED,
+  GlobalEventNames.PAYMENT_INITIATED,
+  GlobalEventNames.PAYMENT_CHECKOUT_OPENED,
+  GlobalEventNames.PAYMENT_SUCCEEDED,
+  GlobalEventNames.PAYMENT_FAILED,
+  GlobalEventNames.PAYMENT_CANCELLED,
+  GlobalEventNames.PAYMENT_VERIFICATION_FAILED,
+  GlobalEventNames.PAYMENT_WEBHOOK_VERIFIED,
+  GlobalEventNames.PAYMENT_DUPLICATE_IGNORED,
+  GlobalEventNames.COD_CREATED,
+  GlobalEventNames.COD_COLLECTION_PENDING,
+  GlobalEventNames.COD_COLLECTED,
+  GlobalEventNames.COD_COLLECTION_FAILED,
+  GlobalEventNames.SHIPMENT_CREATED,
+  GlobalEventNames.SHIPMENT_CREATE_FAILED,
+  GlobalEventNames.SHIPMENT_DELIVERED,
+  GlobalEventNames.SHIPMENT_CANCELLED,
+  GlobalEventNames.SHIPMENT_RTO,
+  GlobalEventNames.SHIPMENT_PICKUP,
+  GlobalEventNames.SHIPMENT_TRACK_SYNCED,
+  GlobalEventNames.TICKET_CREATED,
+  GlobalEventNames.TICKET_REPLIED,
+  GlobalEventNames.TICKET_RESOLVED,
+  GlobalEventNames.TICKET_REOPENED,
+  GlobalEventNames.TICKET_CLOSED,
+  GlobalEventNames.CART_ITEM_ADDED,
+  GlobalEventNames.CART_ITEM_REMOVED,
+  GlobalEventNames.CART_CLEARED,
+  GlobalEventNames.CART_ERROR,
+  GlobalEventNames.SEARCH_SUBMITTED,
+  GlobalEventNames.SEARCH_RATE_LIMITED,
+]);
+
+const PRODUCT_EVENT_TYPES = new Set([
+  GlobalEventNames.PRODUCT_CREATED,
+  GlobalEventNames.PRODUCT_UPDATED,
+  GlobalEventNames.PRODUCT_DELETED,
+  GlobalEventNames.PRODUCT_SEARCHED,
+  GlobalEventNames.PRODUCT_SEARCHED_FROM_CACHE,
+  GlobalEventNames.PRODUCT_VIEWED,
+  GlobalEventNames.PRODUCT_RATED,
+  GlobalEventNames.PRODUCT_RATING_UPDATED,
+  GlobalEventNames.PRODUCT_UNRATED,
+  GlobalEventNames.PRODUCT_SHARED,
+  GlobalEventNames.PRODUCT_WISHLISTED,
+  GlobalEventNames.PRODUCT_CARTED,
+  GlobalEventNames.PRODUCT_COMMENTED,
+  GlobalEventNames.PRODUCT_COMMENT_UPDATED,
+  GlobalEventNames.PRODUCT_COMMENT_DELETED,
+  GlobalEventNames.PRODUCT_STOCK_UPDATED,
+  GlobalEventNames.PRODUCT_PRICE_UPDATED,
+  GlobalEventNames.PRODUCT_IMAGE_UPDATED,
+  GlobalEventNames.PRODUCT_DESCRIPTION_UPDATED,
+  GlobalEventNames.PRODUCT_CATEGORY_UPDATED,
+  GlobalEventNames.PRODUCT_TAGS_UPDATED,
+  GlobalEventNames.PRODUCT_DISCOUNT_UPDATED,
+]);
+
+export function isMajorEvent(type) {
+  return MAJOR_EVENT_TYPES.has(type);
+}
+
+export function isProductEvent(type) {
+  return PRODUCT_EVENT_TYPES.has(type);
+}
+
+export function eventSector(type) {
+  const value = String(type || "");
+  if (value.startsWith("product_") || value === GlobalEventNames.PRODUCT_SEARCHED)
+    return "product";
+  if (value.startsWith("user_")) return "user";
+  if (value.startsWith("session") || value.includes("logged_in"))
+    return "session";
+  if (value.startsWith("order_")) return "order";
+  if (
+    value.startsWith("payment_") ||
+    value.startsWith("checkout_") ||
+    value.startsWith("cod_")
+  )
+    return "payment";
+  if (value.startsWith("shipment_")) return "shipment";
+  if (value.startsWith("ticket_")) return "support";
+  if (value.startsWith("wishlist_")) return "wishlist";
+  if (value.startsWith("cart_")) return "cart";
+  if (value.startsWith("search_")) return "search";
+  if (value.startsWith("analytics_")) return "analytics";
+  if (value === GlobalEventNames.ERROR || value.endsWith("_error"))
+    return "error";
+  if (value === GlobalEventNames.SITE_VIEWED) return "site";
+  return "global";
+}
 
 export {
   dbEventNames,

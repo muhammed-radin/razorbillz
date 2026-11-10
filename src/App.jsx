@@ -18,7 +18,12 @@ import { api } from "./utils/api";
 import { authClient } from "./lib/auth-client";
 import { openAuthenticationModal } from "./utils/signin-modal-required";
 
-const HIDE_CHROME_PATHS = ["/login", "/signup", "/forgot-password"];
+const HIDE_CHROME_PATHS = [
+  "/login",
+  "/signup",
+  "/reset-password",
+  "/forgot-password",
+];
 const GUEST_ACCESS_PATHS = [
   // main pages
   "/",
@@ -31,6 +36,7 @@ const GUEST_ACCESS_PATHS = [
   // auth
   "/login",
   "/signup",
+  "/reset-password",
   "/forgot-password",
 
   // policy pages
@@ -49,7 +55,7 @@ function App() {
   const navigation = useNavigation();
   const isNavigating = navigation.state === "loading";
 
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
 
   const isGuestAccess =
     GUEST_ACCESS_PATHS.includes(location.pathname) ||
@@ -67,7 +73,7 @@ function App() {
       } else {
         if (HIDE_CHROME_PATHS.includes(location.pathname)) {
           setIsLoading(false);
-          return; // Allow access to login, signup, and forgot-password pages
+          return; // Allow access to login, signup, and reset-password pages
         }
         alert
           .confirm({
@@ -121,6 +127,7 @@ function App() {
         ) {
           toast.success("Google Sign-In successful");
           api.clearSessionCache(); // Clear any existing session data
+          setSearchParams({}); // Clear the search params to avoid repeated handling
           hasRun.current = true;
           navigate("/"); // Navigate to the home page after successful Google sign-in
         } else if (
@@ -130,6 +137,19 @@ function App() {
           toast.error("Google Sign-In failed. Please try again.");
           hasRun.current = true;
           navigate("/login"); // Navigate to the login page after failed Google sign-in
+        }
+
+        if (
+          searchParams.get("action") === "verify-email" &&
+          searchParams.get("status") === "success"
+        ) {
+          toast.success("Email verification successful.");
+          hasRun.current = true;
+          setSearchParams({}); // Clear the search params to avoid repeated handling
+          api.clearSessionCache(); // Clear any existing session data
+          setTimeout(() => {
+            window.location.reload();
+          }, 1000); // Reload the page to reflect the verified session
         }
       }
 

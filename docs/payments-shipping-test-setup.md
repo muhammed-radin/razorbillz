@@ -35,7 +35,8 @@ stay disabled unless explicitly configured for production.
 7. Without keys, payment creation fails closed with 503
    `PAYMENT_CONFIGURATION_MISSING` before any record is made — the
    checkout shows "Online payment is temporarily unavailable" and offers
-   COD. (Only Shipmozo courier calls still return `{ stub:true }`.)
+   COD. (Shipmozo calls likewise fail closed with 503
+   `SHIPMENT_CONFIGURATION_MISSING`; see §3.)
 
 ## 2. Cash on Delivery (COD)
 
@@ -83,7 +84,14 @@ Contract source: `public/Shipmozo API.pdf` + live Swagger
   `get-return-reason`.
 - Our create flow: push-order → auto-assign (or assign-courier with an
   explicit `courierId`, or `pushOnly:true`) → AWB stored. Without keys
-  everything returns `{ stub:true }` and creates nothing.
+  the provider helper returns `{ stub:true }`, and every shipment route
+  maps that to HTTP 503 `SHIPMENT_CONFIGURATION_MISSING` (never a fake
+  success). Follow-up calls use the provider `order_id` from push-order
+  (`fulfillment.shipmozoOrderId`), not the internal `ORD-…` id.
+- Tracking sync classifies courier text precisely: `Out for Delivery`
+  does NOT complete the order; only a true delivered status transitions
+  `shipped → delivered`. `RTO` and `delivery exception/NDR` are reported
+  separately, and repeated scans are de-duplicated before append.
 - Tracking page: `https://panel.shipmozo.com/track-order` (customer enters
   AWB). We store `awb` + link to this page; we never fabricate AWBs.
 - No webhooks are documented: tracking syncs via explicit
@@ -107,3 +115,59 @@ Contract source: `public/Shipmozo API.pdf` + live Swagger
 
 Both handlers deduplicate (`webhook_events` / payment-id checks) and never
 let analytics failures fail the order/payment update.
+
+## 5. Order & refund lifecycle (single state machine)
+
+All transitions live in `Server/models/schema/order.js` and are reused by
+both the dedicated admin endpoints and the generic
+`POST /api/orders/:id/updateStatus`. `validate:false` is ignored — a
+client can never bypass the machine.
+
+- `pending → confirmed → processing → shipped → delivered`
+- `delivered → return_requested → returned` (or back to `delivered` when
+  the return is rejected)
+- `pending|confirmed|processing → cancelled` (terminal)
+- Same-status and terminal-state calls are idempotent where retries are
+  legitimate (packing/shipping/delivery polls) and rejected otherwise.
+- Cancellation releases reserved stock and, for a captured prepaid
+  payment, queues exactly one refund (`ensureCancellationRefund`).
+  Stock release uses marker fields (`stockReleasedAt`,
+  `returnStockReleasedAt`), so a retried click cannot inflate stock.
+- `POST /api/orders/:id/refund/complete` performs a Razorpay refund for
+  prepaid orders (or accepts `transactionId`, or `manual:true` after an
+  operator already issued it). COD refunds complete manually. Retried
+  completions return the final state instead of double-refunding.
+- Generic admin status dispatch maps to the domain methods:
+  `processing → startProcessing`, `shipped → markAsShipped`,
+  `delivered → markAsDelivered`, `cancelled → cancelOrder + finalize`,
+  `return_requested → requestReturn`, `returned → completeReturn`.
+
+## 6. Local regression tests (no live keys needed)
+
+Backend (`Server/`):
+
+```bash
+MONGODB_TEST_URI=mongodb://localhost:27017 npm test
+```
+
+- `tests/order-status.e2e.test.js` runs the full lifecycle against a real
+  MongoDB (`razorbillz_order_status_test`): every order status, COD
+  collection, cancellation/stock idempotency, prepaid refund queue,
+  partial/full refunds, returns/restock, rejected returns, failed
+  payments, invalid transitions and terminal idempotency.
+- `tests/shipmozo.test.js` covers the offline-safe surface: the typed
+  configuration-missing error, courier status classification, and
+  tracking-history de-duplication. Live Shipmozo calls require KYC keys.
+- The suite generates its own `ENCRYPTION_KEYS_JSON` before importing the
+  order model; no production secrets are read.
+
+Frontend (`razorbills/`):
+
+```bash
+npm run build
+```
+
+StrictMode-safe data loading uses
+`src/utils/hooks/useStrictEffect.js`, and `api.client.get` coalesces
+identical in-flight GETs, so mount effects no longer fire duplicate
+reads.

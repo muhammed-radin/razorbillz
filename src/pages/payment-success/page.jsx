@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { Helmet } from "react-helmet-async";
@@ -43,7 +44,7 @@ export default function PaymentSuccessPage() {
   const [fetchError, setFetchError] = useState(null);
   const [retrying, setRetrying] = useState(false);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     if (!orderId) {
       setLoading(false);
       return;

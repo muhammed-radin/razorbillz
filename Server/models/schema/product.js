@@ -114,6 +114,7 @@ export class MinimalProduct {
     tags,
     category,
     stock,
+    metrics,
     meterics,
     owner,
   } = {}) {
@@ -136,6 +137,7 @@ export class MinimalProduct {
             tags,
             category,
             stock,
+            metrics,
             meterics,
             owner,
           };
@@ -156,7 +158,9 @@ export class MinimalProduct {
     this.tags = product.tags;
     this.category = product.category;
     this.stock = product.stock;
-    this.meterics = product.meterics;
+    this.metrics = product.metrics ?? product.meterics ?? null;
+    // Legacy alias: older clients and cached feeds read `meterics`.
+    this.meterics = this.metrics;
     this.owner = product.owner;
   }
 }

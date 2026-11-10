@@ -14,17 +14,18 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { encrypt, encryptStrict } from "@/utils/crypt";
+import { decrypt, encrypt, encryptStrict } from "@/utils/crypt";
 import { toast } from "sonner";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { authClient } from "@/lib/auth-client";
+import { authClient, resendVerification } from "@/lib/auth-client";
 import onUserGoogleSignIn from "@/utils/hooks/googleProviderSignIn";
 import { Eye, EyeOff, Loader2, Mail, User, UserPlus, Lock } from "lucide-react";
 import GoogleLogo from "@/components/auth/google-logo";
 import AuthLayout from "@/components/auth/auth-layout";
 import PasswordStrength from "@/components/auth/password-strength";
 import { api } from "@/utils/api";
+import { alert } from "@/components/dialog-alert-provider";
 
 const SignUpPage = () => {
   const { t } = useTranslation();
@@ -42,12 +43,12 @@ const SignUpPage = () => {
         name: z.string().min(
           2,
           t("auth.validationName", {
-            default: "Name must be at least 2 characters long",
+            defaultValue: "Name must be at least 2 characters long",
           }),
         ),
         email: z.string().email(
           t("auth.validationEmail", {
-            default: "Please enter a valid email address",
+            defaultValue: "Please enter a valid email address",
           }),
         ),
         password: z
@@ -55,31 +56,34 @@ const SignUpPage = () => {
           .min(
             8,
             t("auth.validationPassword", {
-              default: "Password must be at least 8 characters long",
+              defaultValue: "Password must be at least 8 characters long",
             }),
           )
           .regex(
             /[A-Z]/,
             t("auth.validationPasswordUppercase", {
-              default: "Password must contain at least one uppercase letter",
+              defaultValue:
+                "Password must contain at least one uppercase letter",
             }),
           )
           .regex(
             /[a-z]/,
             t("auth.validationPasswordLowercase", {
-              default: "Password must contain at least one lowercase letter",
+              defaultValue:
+                "Password must contain at least one lowercase letter",
             }),
           )
           .regex(
             /[0-9]/,
             t("auth.validationPasswordNumber", {
-              default: "Password must contain at least one number",
+              defaultValue: "Password must contain at least one number",
             }),
           )
           .regex(
             /[@$!%*?&#]/,
             t("auth.validationPasswordSpecial", {
-              default: "Password must contain at least one special character",
+              defaultValue:
+                "Password must contain at least one special character",
             }),
           ),
       }),
@@ -92,6 +96,45 @@ const SignUpPage = () => {
   });
 
   const watchedPassword = form.watch("password");
+
+  const openVerificationModal = (email) => {
+    email = decrypt(email || form.getValues("email"));
+    alert.info({
+      title: t("auth.verifyEmailTitle", {
+        defaultValue: "Verify Your Email",
+      }),
+      description: t("auth.verifyEmailDescription", {
+        // No mail sent yet on sign up automatically; so the user must click the button to send it.
+        // This is a security measure to prevent abuse and spam.
+        defaultValue:
+          "A verification email needs to be sent to your email address. Please click the button below to send it. Check your inbox and follow the instructions to verify your account. If you don't see the email, check your spam folder.",
+      }),
+      buttonText: t("auth.resendEmail", {
+        defaultValue: "Send Mail",
+      }),
+      secondaryButtonText: t("auth.cancel", {
+        defaultValue: "Reject",
+      }),
+      onClose: (confirmed) => {
+        if (confirmed) {
+          resendVerification(email);
+        } else {
+          toast.warning(
+            t("auth.verificationEmailNotSentWarning", {
+              defaultValue:
+                "You won't be able to log in until you verify your email.",
+            }),
+          );
+          toast.info(
+            t("auth.verificationEmailNotSent", {
+              defaultValue:
+                "Verification email not sent. You can request at Login page.",
+            }),
+          );
+        }
+      },
+    });
+  };
 
   // ── Submit handler ──
   const submitForm = useCallback(
@@ -123,7 +166,7 @@ const SignUpPage = () => {
                     if (payload.response.status === 200) {
                       resolveui(
                         t("auth.signupSuccess", {
-                          default: "Sign-up Successful",
+                          defaultValue: "Sign-up Successful",
                         }),
                       );
                       api.clearSessionCache(); // clear session cache to ensure fresh session data
@@ -142,7 +185,7 @@ const SignUpPage = () => {
                     } else {
                       rejectui(
                         t("auth.signupFailed", {
-                          default: "Sign-up Failed",
+                          defaultValue: "Sign-up Failed",
                         }),
                       );
                     }
@@ -150,13 +193,16 @@ const SignUpPage = () => {
                   onError: (error) => rejectui(error),
                 },
               )
-              .then(({ error }) => {
+              .then(({ error, data }) => {
+                if (data && data.user && data.user.emailVerified === false) {
+                  openVerificationModal(data.user.email);
+                }
                 if (error) rejectui(error);
               })
               .catch((error) => rejectui(error));
           }),
         {
-          loading: t("auth.signingUp", { default: "Signing up..." }),
+          loading: t("auth.signingUp", { defaultValue: "Signing up..." }),
           success: (msg) => {
             setIsSubmitting(false);
             return `${msg}`;
@@ -174,7 +220,7 @@ const SignUpPage = () => {
               "Unknown error";
             return t("auth.signupFailed", {
               error: message,
-              default: `Sign-up failed: ${message}`,
+              defaultValue: `Sign-up failed: ${message}`,
             });
           },
         },
@@ -217,9 +263,9 @@ const SignUpPage = () => {
   return (
     <AuthLayout
       type="signup"
-      title={t("auth.signupTitle", { default: "Sign up for RazorBillz" })}
+      title={t("auth.signupTitle", { defaultValue: "Sign up for Razorbillz" })}
       subtitle="Join in seconds to access order tracking and member pricing."
-      seoTitle={t("auth.signupTitle", { default: "Sign Up" })}
+      seoTitle={t("auth.signupTitle", { defaultValue: "Sign Up" })}
     >
       <div className="space-y-2.5 sm:space-y-3.5">
         {/* ── Google OAuth Button ── */}
@@ -231,7 +277,7 @@ const SignUpPage = () => {
           disabled={isSubmitting}
           onClick={handleGoogleSignIn}
           aria-label={t("auth.continueWithGoogle", {
-            default: "Continue with Google",
+            defaultValue: "Continue with Google",
           })}
         >
           {isSubmitting ? (
@@ -240,7 +286,9 @@ const SignUpPage = () => {
             <GoogleLogo />
           )}
           <span>
-            {t("auth.continueWithGoogle", { default: "Continue with Google" })}
+            {t("auth.continueWithGoogle", {
+              defaultValue: "Continue with Google",
+            })}
           </span>
         </Button>
 
@@ -248,7 +296,7 @@ const SignUpPage = () => {
         <div className="relative my-1.5 sm:my-2.5 flex items-center justify-center">
           <Separator className="w-full" />
           <span className="absolute bg-background px-3 text-[10px] sm:text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-            {t("auth.or", { default: "OR" })}
+            {t("auth.or", { defaultValue: "OR" })}
           </span>
         </div>
 
@@ -267,7 +315,7 @@ const SignUpPage = () => {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-[11px] sm:text-xs font-semibold">
-                    {t("auth.fullName", { default: "Full Name" })}
+                    {t("auth.fullName", { defaultValue: "Full Name" })}
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
@@ -276,7 +324,7 @@ const SignUpPage = () => {
                         type="text"
                         autoComplete="name"
                         placeholder={t("auth.fullNamePlaceholder", {
-                          default: "Your Full Name",
+                          defaultValue: "Your Full Name",
                         })}
                         className="pl-9 h-9 sm:h-9.5 text-xs sm:text-sm rounded-lg bg-background border-border/80 focus-visible:ring-1 transition-all"
                         disabled={isSubmitting}
@@ -297,7 +345,7 @@ const SignUpPage = () => {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-[11px] sm:text-xs font-semibold">
-                    {t("auth.email", { default: "Email" })}
+                    {t("auth.email", { defaultValue: "Email" })}
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
@@ -307,7 +355,7 @@ const SignUpPage = () => {
                         inputMode="email"
                         autoComplete="email"
                         placeholder={t("auth.emailPlaceholder", {
-                          default: "Email address",
+                          defaultValue: "Email address",
                         })}
                         className="pl-9 h-9 sm:h-9.5 text-xs sm:text-sm rounded-lg bg-background border-border/80 focus-visible:ring-1 transition-all"
                         disabled={isSubmitting}
@@ -328,7 +376,7 @@ const SignUpPage = () => {
               render={({ field }) => (
                 <FormItem>
                   <FormLabel className="text-[11px] sm:text-xs font-semibold">
-                    {t("auth.password", { default: "Password" })}
+                    {t("auth.password", { defaultValue: "Password" })}
                   </FormLabel>
                   <FormControl>
                     <div className="relative">
@@ -337,7 +385,7 @@ const SignUpPage = () => {
                         type={showPassword ? "text" : "password"}
                         autoComplete="new-password"
                         placeholder={t("auth.passwordPlaceholder", {
-                          default: "Create a password",
+                          defaultValue: "Create a password",
                         })}
                         className="pl-9 pr-9 h-9 sm:h-9.5 text-xs sm:text-sm rounded-lg bg-background border-border/80 focus-visible:ring-1 transition-all"
                         disabled={isSubmitting}
@@ -417,7 +465,7 @@ const SignUpPage = () => {
               )}
               <span>
                 {t("auth.continueWithEmail", {
-                  default: "Create Free Account",
+                  defaultValue: "Create Free Account",
                 })}
               </span>
             </Button>
@@ -428,13 +476,13 @@ const SignUpPage = () => {
         <div className="pt-1.5 text-center">
           <p className="text-xs sm:text-sm text-muted-foreground">
             {t("auth.alreadyHaveAccount", {
-              default: "Already have an account?",
+              defaultValue: "Already have an account?",
             })}{" "}
             <Link
               to="/login"
               className="font-semibold text-foreground underline underline-offset-4 hover:text-primary transition-colors ml-1"
             >
-              {t("auth.logIn", { default: "Log in" })}
+              {t("auth.logIn", { defaultValue: "Log in" })}
             </Link>
           </p>
         </div>

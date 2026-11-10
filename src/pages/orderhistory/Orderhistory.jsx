@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useMemo, useState } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import {
   AlertCircle,
@@ -464,7 +465,7 @@ export default function Orderhistory() {
   const [cancelTarget, setCancelTarget] = useState(null);
   const [returnTarget, setReturnTarget] = useState(null);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchUserOrders().catch(() => {});
   }, [fetchUserOrders]);
 

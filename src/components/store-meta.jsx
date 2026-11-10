@@ -6,7 +6,7 @@
  * brand names or meta copy, so SEO metadata stays consistent everywhere.
  *
  *   <StoreMeta />                       // site defaults (localized)
- *   <StoreMeta title="Checkout" />      // "Checkout | RazorBillz"
+ *   <StoreMeta title="Checkout" />      // "Checkout | Razorbillz"
  *   <StoreMeta title="X" noIndex />     // adds robots noindex,nofollow
  */
 import { Helmet } from "react-helmet-async";

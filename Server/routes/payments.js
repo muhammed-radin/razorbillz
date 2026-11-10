@@ -7,8 +7,10 @@ import {
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import {
   OrderModel,
+  OrderStatus,
   PaymentStatus,
   PaymentMethod,
+  CODStatus,
 } from "../models/schema/order.js";
 import {
   PaymentAttemptModel,
@@ -25,7 +27,11 @@ import {
 import { priceOrderItems, PRICING_DEFAULTS } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
 import { reserveStock } from "../utils/inventory.js";
-import { createOrderRecord } from "../utils/orderFactory.js";
+import { createOrderRecord, decryptOrderAddresses } from "../utils/orderFactory.js";
+import {
+  openAddressObject,
+  sealAddressObject,
+} from "../utils/crypto/index.js";
 import { evt, Evts } from "../utils/events.manage.js";
 import { db } from "../utils/db.js";
 import { HttpError, Errors } from "../utils/httpError.js";
@@ -180,8 +186,12 @@ router.post(
       pricedTotal: priced.totalAmount,
       currency: "INR",
       pricedSnapshot: priced,
-      shippingAddress: legacyOrder?.shippingAddress ?? shippingAddress,
-      billingAddress: legacyOrder?.billingAddress ?? billingAddress,
+      shippingAddress: sealAddressObject(
+        legacyOrder?.shippingAddress ?? shippingAddress,
+      ),
+      billingAddress: sealAddressObject(
+        legacyOrder?.billingAddress ?? billingAddress,
+      ),
       razorpayOrderId: rzp.id,
       legacyOrderId: legacyOrder?.id ?? null,
       status: AttemptStatus.CREATED,
@@ -222,7 +232,7 @@ async function claimAttempt(attemptId, razorpayPaymentId) {
         razorpayPaymentId,
       },
     },
-    { new: true },
+    { returnDocument: "after" },
   );
 }
 
@@ -284,12 +294,17 @@ async function confirmAttemptOrder(attempt, { razorpayPaymentId, razorpaySignatu
         transactionId: razorpayPaymentId,
         amount: legacy.totalAmount,
       });
+      safeEvent(Evts.ORDER_PAID, {
+        orderId: order.id,
+        userId: order.userId,
+        amount: order.payment?.amountPaid ?? order.totalAmount,
+      });
     } else {
       order = await createOrderRecord({
         userId: claimed.userId,
         priced: snap,
-        shippingAddress: claimed.shippingAddress,
-        billingAddress: claimed.billingAddress,
+        shippingAddress: openAddressObject(claimed.shippingAddress),
+        billingAddress: openAddressObject(claimed.billingAddress),
         method: PaymentMethod.RAZORPAY,
         idempotencyKey: claimed.idempotencyKey,
         paymentFields: {
@@ -407,7 +422,7 @@ router.post(
     });
     return res.status(deduplicated ? 200 : 201).json({
       success: true,
-      order,
+      order: decryptOrderAddresses(order),
       ...(deduplicated ? { deduplicated: true } : {}),
     });
   }),
@@ -485,7 +500,19 @@ router.post(
         const order = await OrderModel.findOne({
           "payment.razorpayOrderId": gatewayOrderId,
         });
-        if (order && order.payment.status !== PaymentStatus.PAID && paymentEntity.id) {
+        if (
+          order &&
+          order.payment.status !== PaymentStatus.PAID &&
+          ![OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(
+            order.status,
+          ) &&
+          ![
+            PaymentStatus.REFUND_PENDING,
+            PaymentStatus.PARTIALLY_REFUNDED,
+            PaymentStatus.REFUNDED,
+          ].includes(order.payment.status) &&
+          paymentEntity.id
+        ) {
           const dup = await OrderModel.findOne({
             "payment.razorpayPaymentId": paymentEntity.id,
             "payment.status": PaymentStatus.PAID,
@@ -501,8 +528,15 @@ router.post(
                 transactionId: paymentEntity.id,
                 amount: order.totalAmount,
               });
+              safeEvent(Evts.ORDER_PAID, {
+                orderId: order.id,
+                userId: order.userId,
+                amount: order.payment?.amountPaid ?? order.totalAmount,
+              });
               safeEvent(Evts.PAYMENT_SUCCEEDED, {
                 orderId: order.id,
+                userId: order.userId,
+                amount: order.payment?.amountPaid ?? order.totalAmount,
                 source: "webhook",
               });
             } catch (err) {
@@ -525,10 +559,25 @@ router.post(
       const order = await OrderModel.findOne({
         "payment.razorpayOrderId": gatewayOrderId,
       });
-      if (order && order.payment.status !== PaymentStatus.PAID) {
-        await order.markPaymentFailed(
-          paymentEntity.error_description ?? "payment failed (webhook)",
-        );
+      if (
+        order &&
+        order.payment.status !== PaymentStatus.PAID &&
+        ![OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status) &&
+        ![
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        try {
+          await order.markPaymentFailed(
+            paymentEntity.error_description ?? "payment failed (webhook)",
+          );
+        } catch (err) {
+          // Late failure events must never 500 the webhook or downgrade
+          // money already captured/refunded.
+          console.error("[payments] webhook failure update skipped:", err?.message);
+        }
       }
       safeEvent(Evts.PAYMENT_FAILED, { source: "webhook", gatewayOrderId });
     }
@@ -568,6 +617,17 @@ async function recordFailure(req) {
   if (order.userId !== req.user?.id) throw Errors.forbidden("Access denied.");
   if (order.payment.status === PaymentStatus.PAID) {
     return { order, alreadyPaid: true };
+  }
+  if (
+    [OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status) ||
+    [
+      PaymentStatus.REFUND_PENDING,
+      PaymentStatus.PARTIALLY_REFUNDED,
+      PaymentStatus.REFUNDED,
+    ].includes(order.payment.status)
+  ) {
+    // Late/canceled client reports are not payment state changes.
+    return { order, skipped: true };
   }
   await order.markPaymentFailed(
     cancelled ? "checkout cancelled by customer" : (reason ?? "payment failed"),
@@ -633,12 +693,25 @@ router.post(
     const order = await OrderModel.findOne({ id: req.params.id });
     if (!order) throw Errors.notFound("Order not found.");
     try {
+      const alreadyCollected =
+        order.payment?.codStatus === CODStatus.COLLECTED;
       const updated = await order.markCodCollected({
         actorId: req.user?.id ?? null,
         amount: req.body?.amount ?? order.totalAmount,
       });
-      safeEvent(Evts.COD_COLLECTED, { orderId: order.id });
-      return res.status(200).json({ success: true, order: updated });
+      // Idempotent endpoint: repeated clicks must not add revenue twice.
+      if (!alreadyCollected) {
+        safeEvent(Evts.COD_COLLECTED, {
+          orderId: order.id,
+          userId: order.userId,
+          amount: Number(
+            req.body?.amount ?? updated.payment?.amountPaid ?? order.totalAmount,
+          ),
+        });
+      }
+      return res
+        .status(200)
+        .json({ success: true, order: decryptOrderAddresses(updated) });
     } catch (err) {
       safeEvent(Evts.COD_COLLECTION_FAILED, {
         orderId: req.params.id,

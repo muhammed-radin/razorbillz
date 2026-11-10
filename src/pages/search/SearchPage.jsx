@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -249,7 +250,7 @@ export default function SearchPage() {
     [setSearchParams],
   );
 
-  useEffect(() => {
+  useStrictEffect(() => {
     // load categories from API
     api.client.get("/api/categories?limit=100").then((response) => {
       const fetchedCategories = response.data;

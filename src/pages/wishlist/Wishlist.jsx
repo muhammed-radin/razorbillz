@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -19,7 +20,7 @@ export default function Wishlist() {
 
   const [selectedIds, setSelectedIds] = useState([]);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchWishlist().catch(() => {});
   }, [fetchWishlist]);
 

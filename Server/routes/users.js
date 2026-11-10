@@ -8,7 +8,13 @@ import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import createAuth, { getAuthInstance } from "../utils/auth.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
 import settingsRouter from "./settings.js";
-import { encrypt } from "../utils/crypt.js";
+import {
+  encrypt,
+  decryptField,
+  isEncrypted,
+  advancedPIIIdx,
+  searchTokens,
+} from "../utils/crypto/index.js";
 import { isAPIError } from "better-auth/api";
 
 const router = express.Router();
@@ -30,7 +36,28 @@ router.get("/profile", requireAuth, passUserAuth, async (req, res) => {
       return res.status(404).json({ error: "User not found" });
     }
 
-    res.json(user);
+    /* PII is sealed at rest (envelope AES-GCM); decrypt-on-read so the
+     * client never handles the storage format. Blind-index subdocs are
+     * server-internal and stripped here. */
+    const decrypted = {
+      ...user,
+      name: decryptField(user.name),
+      email: decryptField(user.email),
+      image: decryptField(user.image),
+      profilePicture: decryptField(user.profilePicture),
+      phoneNumber: decryptField(user.phoneNumber),
+    };
+    delete decrypted.name_idx;
+    delete decrypted.email_idx;
+    delete decrypted.phone_idx;
+    delete decrypted.name_prefix;
+    delete decrypted.name_grams;
+    delete decrypted.email_prefix;
+    delete decrypted.email_grams;
+    delete decrypted.phone_prefix;
+    delete decrypted.phone_grams;
+
+    res.json(decrypted);
   } catch (err) {
     console.error("Error fetching user profile:", err);
     res.status(500).json({ error: "Failed to fetch user profile" });
@@ -49,9 +76,13 @@ router.post("/profile", requireAuth, passUserAuth, async (req, res) => {
 
     const updateFields = {};
     if (name) updateFields.name = encrypt(name);
-    if (avatar) updateFields.image = encrypt(avatar);
-    if (avatar) updateFields.profilePicture = encrypt(avatar);
-    if (phone) updateFields.phoneNumber = phone;
+    if (avatar) {
+      updateFields.image = encrypt(avatar);
+      updateFields.profilePicture = encrypt(avatar);
+    }
+    if (phone) updateFields.phoneNumber = encrypt(phone);
+    /* vaulted mirror tokens are rebuilt by the databaseHooks.user.update
+     * after-hook (buildMirrorUserFields) — writes here stay minimal. */
 
     const result = await getAuthInstance().api.updateUser({
       query: { id: userId },
@@ -112,12 +143,50 @@ router.get(
     }
 
     // build query based on request parameters
-    // Admin search across name / email / id (literal, no operators).
+    // Admin search across name / email / id / phone.
+    // Encrypted fields are matched through blind-index families:
+    //   exact   → field_idx eq token
+    //   prefix  → field_prefix membership (anchored, zero FPs)
+    //   substring → field_grams $all (complete, may over-match;
+    //               decrypted candidates are post-filtered below)
+    // The plaintext is never readable here — the UX-equivalent regex
+    // fallbacks on legacy plaintext rows (pre-migration) are kept so
+    // search keeps working before the migration completes.
     const search = String(req.query?.search ?? req.body?.search ?? "").trim();
     query = {};
+    let needsGramsFilter = false;
     if (search) {
       const rx = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-      query = { $or: [{ name: rx }, { email: rx }, { id: rx }] };
+      let adv = null;
+      try {
+        adv = {
+          name: searchTokens(search, "name"),
+          email: searchTokens(search, "email"),
+          phone: searchTokens(search, "phone"),
+        };
+      } catch {
+        adv = null; // keys not configured — regex-only search still works
+      }
+
+      const orBranches = [{ name: rx }, { email: rx }, { id: rx }];
+      if (adv) {
+        for (const [field, tokens] of Object.entries(adv)) {
+          if (!tokens) continue;
+          if (tokens.eq) {
+            orBranches.push({ [`${field}_idx`]: tokens.eq });
+          }
+          if (tokens.prefix) {
+            orBranches.push({ [`${field}_prefix`]: tokens.prefix });
+          }
+          if (tokens.grams.length) {
+            // Only reachable for queries >= 3 chars — searchTokens
+            // emits NO grams below GRAM_SIZE (substring minimum).
+            orBranches.push({ [`${field}_grams`]: { $all: tokens.grams } });
+            needsGramsFilter = true; // trigram may over-match → post-filter
+          }
+        }
+      }
+      query = { $or: orBranches };
     }
     if (roles && Array.isArray(roles) && roles.length > 0) {
       query.role = { $in: roles };
@@ -132,8 +201,47 @@ router.get(
       .limit(limit)
       .toArray()
       .then((users) => {
+        // Decrypt-at-read for admin listing; keep server index tokens
+        // and auth internals out of the response. When trigram (grams)
+        // branches were used, decrypted candidates are post-filtered to
+        // remove scattered-gram false positives (substring semantics).
+        const needle = search.toLowerCase();
+        let safeUsers = users
+          .map((u) => ({
+            ...u,
+            name: decryptField(u.name),
+            email: decryptField(u.email),
+            phoneNumber: decryptField(u.phoneNumber),
+            image: decryptField(u.image),
+            profilePicture: decryptField(u.profilePicture),
+          }))
+          .filter((u) => {
+            if (!needsGramsFilter || !needle) return true;
+            // Mirror the full query branch set (name/email/phone/id,
+            // all "contains" semantics) on DECRYPTED values so only
+            // scattered-gram false positives get dropped.
+            return (
+              String(u.name ?? "").toLowerCase().includes(needle) ||
+              String(u.email ?? "").toLowerCase().includes(needle) ||
+              String(u.phoneNumber ?? "").replace(/\s+/g, "").toLowerCase().includes(needle.replace(/\s+/g, "")) ||
+              String(u.id ?? "").toLowerCase().includes(needle)
+            );
+          });
+        safeUsers = safeUsers.map((u) => {
+          const clean = { ...u };
+          for (const k of [
+            "name_idx", "email_idx", "phone_idx",
+            "name_prefix", "name_grams",
+            "email_prefix", "email_grams",
+            "phone_prefix", "phone_grams",
+            "password", "token",
+          ]) {
+            delete clean[k];
+          }
+          return clean;
+        });
         result = {
-          users: users,
+          users: safeUsers,
           page: page,
           limit: limit,
           count: totalCount,
@@ -170,14 +278,33 @@ router.get(
   requirePermission({ user: ["get"] }),
   function (req, res, next) {
     const userId = req.params.id;
-    // Never expose sensitive internals (hashes, tokens, permissions).
+    // Never expose sensitive internals (hashes, tokens, indexes).
+    const propsToStrip = (u) => {
+      const clean = {
+        ...u,
+        name: decryptField(u.name),
+        email: decryptField(u.email),
+        phoneNumber: decryptField(u.phoneNumber),
+        image: decryptField(u.image),
+        profilePicture: decryptField(u.profilePicture),
+      };
+      for (const k of [
+        "name_idx", "email_idx", "phone_idx",
+        "name_prefix", "name_grams",
+        "email_prefix", "email_grams",
+        "phone_prefix", "phone_grams",
+      ]) {
+        delete clean[k];
+      }
+      return clean;
+    };
     db.collection("users")
       .findOne({ id: userId }, { projection: { password: 0, token: 0 } })
       .then((user) => {
         if (!user) {
           return res.status(404).json({ error: "User not found" });
         }
-        res.json(user);
+        res.json(propsToStrip(user));
       })
       .catch((err) => {
         console.error("Error fetching user:", err);

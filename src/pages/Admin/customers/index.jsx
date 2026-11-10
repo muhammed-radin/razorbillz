@@ -1,4 +1,5 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useRef, useCallback } from "react";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { Link } from "react-router-dom";
 import { toast } from "sonner";
 import {
@@ -130,7 +131,7 @@ export default function CustomersPage() {
 
   const [isSudo, setSudo] = useState(false);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     async function checkSudo() {
       let { data: session } = await api.getSession();
       if (session && session.user) {
@@ -254,7 +255,7 @@ export default function CustomersPage() {
     [appliedSearch, currentPage, currentTab, roleFilter, sortBy],
   );
 
-  useEffect(() => {
+  useStrictEffect(() => {
     fetchCustomers();
   }, [fetchCustomers, refreshKey]);
 

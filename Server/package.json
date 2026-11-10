@@ -7,7 +7,11 @@
     "start": "node ./bin/www",
     "dev": "NODE_ENV=development nodemon app.js",
     "devwin": "set NODE_ENV=development && nodemon app.js",
-    "test": "node --test \"tests/*.test.js\""
+    "test": "node --test \"tests/*.test.js\"",
+    "keys:generate": "node scripts/generate-master-keys.js",
+    "keys:rotate": "node scripts/generate-master-keys.js --rotate",
+    "migrate:encryption": "node scripts/migrate-encryption.js",
+    "migrate:encryption:dry": "node scripts/migrate-encryption.js --dry"
   },
   "dependencies": {
     "@agendajs/mongo-backend": "^4.0.3",
@@ -20,14 +24,16 @@
     "crypto-js": "^4.2.0",
     "dayjs": "^1.11.23",
     "debug": "~2.6.9",
-    "dotenv": "^17.2.3",
+    "dotenv": "^17.4.2",
+    "ejs": "^7.0.2",
     "express": "^5.2.1",
     "express-basic-auth": "^1.2.1",
     "express-rate-limit": "^8.6.2",
-    "firebase": "^12.6.0",
-    "mongodb": "^7.5.0",
+    "firebase": "^9.14.0",
+    "mongodb": "^7.7.0",
     "mongoose": "^9.0.1",
     "morgan": "^1.11.0",
+    "nodemailer": "^10.2.1",
     "ua-parser-js": "^2.0.10",
     "uuid": "^14.0.1"
   }

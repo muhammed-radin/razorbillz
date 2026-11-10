@@ -1,7 +1,8 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { StoreMeta } from "@/components/store-meta";
+import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { FolderOpen, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,7 +21,7 @@ import { ProductRail } from "./components/FeaturedProducts";
 import { SectionHeading, Reveal } from "./components/Reveal";
 
 const OfferSection = lazy(() => import("./components/OfferSection"));
-const WhyRazorbills = lazy(() => import("./components/WhyRazorbills"));
+const WhyRazorbillz = lazy(() => import("./components/WhyRazorbills"));
 const RecommendationSection = lazy(
   () => import("./components/RecommendationSection"),
 );
@@ -60,7 +61,7 @@ export default function HomePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     const hydrateUserState = async () => {
       const { useCartStore, useWishlistStore } = await import("@/stores/shop");
       useCartStore
@@ -80,12 +81,13 @@ export default function HomePage() {
     return () => window.clearTimeout(timeoutId);
   }, []);
 
-  useEffect(() => {
+  useStrictEffect(() => {
     let live = true;
     Promise.allSettled([
+      api.waitForSession(),
       api.client.get("/api/products/feed"),
       api.client.get("/api/categories?limit=12"),
-    ]).then(([feed, cats]) => {
+    ]).then(([, feed, cats]) => {
       if (!live) return;
       if (feed.status === "fulfilled") {
         const d = feed.value.data || {};
@@ -142,7 +144,7 @@ export default function HomePage() {
       <Suspense fallback={null}>
         {dealProduct && <OfferSection product={dealProduct} />}
 
-        <WhyRazorbills />
+        <WhyRazorbillz />
 
         {/* New arrivals rail — only when the feed has items */}
         {(loading || newArrivals.length > 0) && (

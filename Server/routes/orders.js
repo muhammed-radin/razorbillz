@@ -8,8 +8,10 @@ import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import { useMemory } from "../utils/memory.js";
 import { priceOrderItems } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
-import { createOrderRecord, releaseOrderStock } from "../utils/orderFactory.js";
-import { evt, Evts } from "../utils/events.manage.js";
+import { createOrderRecord, releaseOrderStock, decryptOrderAddresses } from "../utils/orderFactory.js";
+import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
+import { isStaffUser } from "../utils/roles.js";
+import { refundRazorpayPayment } from "../utils/razorpay.js";
 import {
   OrderModel,
   OrderStatus,
@@ -25,6 +27,100 @@ import {
 /* =========================================================
  * ORDER API ENDPOINTS
  * ========================================================= */
+
+/* Fire a lifecycle event with the full order snapshot so analytics,
+ * user stats and activity logs all see the same authoritative data. */
+function fireOrderEvent(type, order, extra = {}) {
+  try {
+    if (!order) return;
+    const plain =
+      typeof order.toObject === "function" ? order.toObject() : order;
+    const event = new OrderEvent({ type, order: plain });
+    Object.assign(event, extra);
+    evt.fire(type, event);
+  } catch (error) {
+    console.error("[orders] event fire failed:", error?.message);
+  }
+}
+
+function orderStatusEventType(status) {
+  if (status === OrderStatus.DELIVERED) return Evts.ORDER_COMPLETED;
+  if (status === OrderStatus.CANCELLED) return Evts.ORDER_CANCELLED;
+  if (status === OrderStatus.RETURN_REQUESTED) {
+    return Evts.ORDER_RETURN_REQUESTED;
+  }
+  return Evts.ORDER_STATUS_CHANGED;
+}
+
+/* A cancellation is only final once reserved stock is released and any
+ * captured money is queued for refund. Both steps are idempotent, so an
+ * approve retry / double click cannot restock twice or double-queue. */
+async function finalizeCancellation(order, { actorId = null, reason = "Order cancelled" } = {}) {
+  await releaseOrderStock(order);
+
+  let updated = order;
+  if (updated.payment?.status === PaymentStatus.PAID) {
+    try {
+      updated = await updated.ensureCancellationRefund({ reason });
+    } catch (err) {
+      // Never fail the cancellation because the refund queue hiccuped;
+      // the payment stays paid and an admin can queue it manually.
+      console.error("[orders] cancellation refund queue failed:", err?.message);
+    }
+  }
+  return updated;
+}
+
+/* Generic admin status changes must go through the domain methods so the
+ * same guards (payment, returns, inventory) apply as the dedicated
+ * endpoints. `validate:false` from clients is intentionally ignored. */
+async function applyAdminStatusTransition(order, body, actorId) {
+  const status = body?.status;
+  const note = body?.note ?? null;
+  const reason = body?.reason ?? note ?? null;
+
+  switch (status) {
+    case OrderStatus.PROCESSING:
+      return order.startProcessing({ actor: "admin", actorId });
+
+    case OrderStatus.SHIPPED:
+      return order.markAsShipped({
+        trackingNumber: body?.trackingNumber ?? null,
+        serviceName: body?.serviceName ?? null,
+        contactNumber: body?.contactNumber ?? null,
+        email: body?.email ?? null,
+        estimatedDelivery: body?.estimatedDelivery ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.DELIVERED:
+      return order.markAsDelivered({ actor: "admin", actorId });
+
+    case OrderStatus.CANCELLED:
+      return order.cancelOrder({
+        reason: reason ?? "Cancelled by admin",
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURN_REQUESTED:
+      return order.requestReturn({
+        reason: reason ?? "Return requested by admin",
+        detail: body?.detail ?? null,
+        actor: "admin",
+        actorId,
+      });
+
+    case OrderStatus.RETURNED:
+      return order.completeReturn({ actorId });
+
+    default:
+      // PENDING / CONFIRMED have no dedicated method; transitionTo still
+      // validates the edge and rejects same-status calls.
+      return order.transitionTo(status, { note, actor: "admin", actorId });
+  }
+}
 
 /*
  * GET    /orders/list
@@ -438,7 +534,8 @@ router.get("/user-orders", requireAuth, passUserAuth, async (req, res) => {
       userId,
     });
 
-    return res.json(orders);
+    // Addresses are sealed at rest — open them only for this response.
+    return res.json(orders.map((o) => decryptOrderAddresses(o)));
   } catch (err) {
     console.error("Error fetching user orders:", err);
 
@@ -468,7 +565,7 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+    const isAdmin = isStaffUser(req.user);
     if (!isAdmin && order.userId !== req.user?.id) {
       return res.status(403).json({
         code: 403,
@@ -476,7 +573,7 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    return res.json(order);
+    return res.json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error fetching order:", err);
 
@@ -526,7 +623,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
       if (existing) {
         return res
           .status(200)
-          .json({ ...existing.toObject(), deduplicated: true });
+          .json({ ...decryptOrderAddresses(existing), deduplicated: true });
       }
     } catch {
       // fall through to creation
@@ -628,7 +725,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
       confirm: true,
       confirmNote: "COD order confirmed",
     });
-    return res.status(201).json(order);
+    return res.status(201).json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error creating order:", err);
 
@@ -641,7 +738,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
         if (existing) {
           return res
             .status(200)
-            .json({ ...existing.toObject(), deduplicated: true });
+            .json({ ...decryptOrderAddresses(existing), deduplicated: true });
         }
       }
       return res.status(409).json({
@@ -681,7 +778,7 @@ router.get("/:id/status", requireAuth, passUserAuth, async (req, res) => {
      *
      * Admins may access any order.
      */
-    const isAdmin = req.user?.role === "admin" || req.user?.role === "owner";
+    const isAdmin = isStaffUser(req.user);
 
     if (!isAdmin && order.userId !== req.user?.id) {
       return res.status(403).json({
@@ -783,9 +880,9 @@ router.post("/:id/cancel", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    evt.fire(Evts.ORDER_CANCELLED, {
-      orderId: order.id,
-      userId: order.userId,
+    // A cancellation *request* is not a cancellation yet; only approval
+    // moves the order out of circulation (and decrements counters).
+    fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
       requested: true,
       reason,
     });
@@ -832,26 +929,22 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
-      // Terminal cancellation restores reserved inventory (best-effort).
-      await releaseOrderStock(updatedOrder);
+      /* Terminal cancellation restores reserved inventory and (for a
+       * captured payment) enters the refund queue. Both are idempotent. */
+      const finalized = await finalizeCancellation(updatedOrder, {
+        actorId: req.user?.id ?? null,
+        reason: updatedOrder.cancellation?.reason ?? "Order cancelled",
+      });
 
-      evt.fire(Evts.ORDER_CANCELLED, {
-        orderId: order.id,
+      fireOrderEvent(Evts.ORDER_CANCELLED, finalized, {
         approved: true,
         actorId: req.user?.id ?? null,
+        refundPending: finalized.refund?.status === RefundStatus.PENDING,
       });
-      if (updatedOrder.payment.status === PaymentStatus.PAID) {
-        // Prepaid cancellation only REQUESTS review — a refund is a
-        // separate verified step (POST /:id/refund). Never implied.
-        evt.fire(Evts.ORDER_STATUS_CHANGED, {
-          orderId: order.id,
-          note: "cancelled while paid — refund pending admin action",
-        });
-      }
 
       return res.json({
         success: true,
-        order: updatedOrder,
+        order: finalized,
       });
     } catch (err) {
       console.error("Error approving cancellation:", err);
@@ -920,7 +1013,8 @@ router.post(
   requirePermission({ orders: ["update"] }),
   async (req, res) => {
     try {
-      const { status, note = null, validate = true } = req.body ?? {};
+      const body = req.body ?? {};
+      const status = body.status;
 
       if (!status) {
         return res.status(400).json({
@@ -947,11 +1041,30 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.transitionTo(status, {
-        note,
-        actor: "admin",
+      /* `validate:false` used to bypass the state machine entirely.
+       * It is no longer honoured: every transition is validated. */
+      let updatedOrder = await applyAdminStatusTransition(
+        order,
+        body,
+        req.user?.id ?? null,
+      );
+
+      if (status === OrderStatus.CANCELLED) {
+        updatedOrder = await finalizeCancellation(updatedOrder, {
+          actorId: req.user?.id ?? null,
+          reason: body.reason ?? body.note ?? "Cancelled by admin",
+        });
+      } else if (status === OrderStatus.RETURNED) {
+        // Completing a return puts the units back into inventory once.
+        await releaseOrderStock(updatedOrder, { reason: "return" });
+      }
+
+      fireOrderEvent(orderStatusEventType(status), updatedOrder, {
+        note: body.note ?? null,
         actorId: req.user?.id ?? null,
-        validate: validate !== false,
+        ...(status === OrderStatus.CANCELLED
+          ? { refundPending: updatedOrder.refund?.status === RefundStatus.PENDING }
+          : {}),
       });
 
       return res.json({
@@ -991,6 +1104,28 @@ router.post(
         });
       }
 
+      const wasPaid = order.payment.status === PaymentStatus.PAID;
+
+      if (
+        [
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_REFUNDED",
+          error: "A refunded order cannot be marked as paid.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot mark a ${order.status} order as paid.`,
+        });
+      }
+
       const updatedOrder = await order.markAsPaid({
         transactionId: req.body?.transactionId ?? null,
 
@@ -999,6 +1134,11 @@ router.post(
             ? Number(req.body.amount)
             : order.totalAmount,
       });
+
+      // Idempotent endpoint: never count the same payment twice.
+      if (!wasPaid) {
+        fireOrderEvent(Evts.ORDER_PAID, updatedOrder);
+      }
 
       return res.json({
         success: true,
@@ -1037,9 +1177,34 @@ router.post(
         });
       }
 
+      if (
+        [
+          PaymentStatus.PAID,
+          PaymentStatus.REFUND_PENDING,
+          PaymentStatus.PARTIALLY_REFUNDED,
+          PaymentStatus.REFUNDED,
+        ].includes(order.payment.status)
+      ) {
+        return res.status(409).json({
+          code: "PAYMENT_ALREADY_CAPTURED",
+          error: "A paid/refunded order cannot be marked as payment failed.",
+        });
+      }
+
+      if ([OrderStatus.CANCELLED, OrderStatus.RETURNED].includes(order.status)) {
+        return res.status(409).json({
+          code: "ORDER_TERMINAL",
+          error: `Cannot fail payment on a ${order.status} order.`,
+        });
+      }
+
       const updatedOrder = await order.markPaymentFailed(
         req.body?.reason ?? null,
       );
+
+      fireOrderEvent(Evts.PAYMENT_FAILED, updatedOrder, {
+        reason: req.body?.reason ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1083,6 +1248,11 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order processing",
+        actorId: req.user?.id ?? null,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1121,6 +1291,11 @@ router.post(
       }
 
       const updatedOrder = await order.markAsPacked();
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order packed",
+        actorId: req.user?.id ?? null,
+      });
 
       return res.json({
         success: true,
@@ -1175,6 +1350,11 @@ router.post(
         actorId: req.user?.id ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "order shipped",
+        actorId: req.user?.id ?? null,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1214,6 +1394,10 @@ router.post(
 
       const updatedOrder = await order.markAsDelivered({
         actor: "admin",
+        actorId: req.user?.id ?? null,
+      });
+
+      fireOrderEvent(Evts.ORDER_COMPLETED, updatedOrder, {
         actorId: req.user?.id ?? null,
       });
 
@@ -1294,6 +1478,8 @@ router.post("/:id/return", requireAuth, passUserAuth, async (req, res) => {
       updatedOrder = await order.requestReturn({
         reason,
         detail: detail || null,
+        actor: "user",
+        actorId: req.user?.id ?? null,
       });
     } catch (err) {
       return res.status(400).json({
@@ -1304,11 +1490,7 @@ router.post("/:id/return", requireAuth, passUserAuth, async (req, res) => {
 
     // A request never marks items returned, refunds payment, or
     // triggers courier pickup — admin review is required first.
-    evt.fire(Evts.ORDER_RETURN_REQUESTED, {
-      orderId: order.id,
-      userId: order.userId,
-      reason,
-    });
+    fireOrderEvent(Evts.ORDER_RETURN_REQUESTED, updatedOrder, { reason });
 
     return res.json({
       success: true,
@@ -1389,6 +1571,7 @@ router.post(
 
       const updatedOrder = await order.rejectReturn({
         reason: req.body?.reason ?? null,
+        actorId: req.user?.id ?? null,
       });
 
       return res.json({
@@ -1430,6 +1613,10 @@ router.post(
 
       const updatedOrder = await order.markReturnReceived();
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return package received",
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1469,6 +1656,13 @@ router.post(
 
       const updatedOrder = await order.completeReturn({
         actorId: req.user?.id ?? null,
+      });
+
+      // Returned units re-enter inventory exactly once.
+      await releaseOrderStock(updatedOrder, { reason: "return" });
+
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "return completed",
       });
 
       return res.json({
@@ -1527,6 +1721,11 @@ router.post(
         reason: req.body?.reason ?? null,
       });
 
+      fireOrderEvent(Evts.ORDER_STATUS_CHANGED, updatedOrder, {
+        note: "refund requested",
+        amount,
+      });
+
       return res.json({
         success: true,
         order: updatedOrder,
@@ -1564,8 +1763,70 @@ router.post(
         });
       }
 
-      const updatedOrder = await order.completeRefund({
-        transactionId: req.body?.transactionId ?? null,
+      if (order.refund.status !== RefundStatus.PENDING) {
+        // Idempotent: a retried "complete" returns the final state.
+        if (
+          order.refund.status === RefundStatus.REFUNDED ||
+          order.refund.status === RefundStatus.PARTIALLY_REFUNDED
+        ) {
+          return res.json({ success: true, order, deduplicated: true });
+        }
+        return res.status(400).json({
+          code: 400,
+          error: "No pending refund exists.",
+        });
+      }
+
+      let transactionId = req.body?.transactionId ?? null;
+      const manual = req.body?.manual === true;
+      const method = order.payment?.method;
+
+      /* Prepaid refunds go back through the gateway unless an operator
+       * explicitly records an already-issued manual refund (with its
+       * reference). COD refunds have no gateway payment, so the operator
+       * supplies the bank/UPI reference (or none for cash). */
+      if (!transactionId && !manual && method === PaymentMethod.RAZORPAY) {
+        const paymentId =
+          order.payment?.razorpayPaymentId ?? order.payment?.transactionId;
+        if (!paymentId) {
+          return res.status(400).json({
+            code: "REFUND_REFERENCE_REQUIRED",
+            error:
+              "No Razorpay payment reference on this order. Pass transactionId or manual:true after issuing the refund.",
+          });
+        }
+        try {
+          const gatewayRefund = await refundRazorpayPayment({
+            paymentId,
+            amountInr: order.refund.amount,
+          });
+          transactionId = gatewayRefund?.id ?? null;
+        } catch (err) {
+          console.error("[orders] gateway refund failed:", err?.message);
+          return res.status(502).json({
+            code: "REFUND_GATEWAY_FAILED",
+            error:
+              err?.message ??
+              "The gateway refund could not be completed. The refund stays pending.",
+          });
+        }
+      }
+
+      if (!transactionId && !manual && method !== PaymentMethod.COD) {
+        return res.status(400).json({
+          code: "REFUND_REFERENCE_REQUIRED",
+          error:
+            "A refund reference is required. Pass transactionId, or manual:true after issuing the refund.",
+        });
+      }
+
+      const updatedOrder = await order.completeRefund({ transactionId });
+
+      fireOrderEvent(Evts.ORDER_REFUNDED, updatedOrder, {
+        amount: updatedOrder.refund?.amount ?? 0,
+        actorId: req.user?.id ?? null,
+        method,
+        manual,
       });
 
       return res.json({

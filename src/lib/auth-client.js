@@ -1,6 +1,8 @@
 import { createAuthClient } from "better-auth/react";
 import { anonymousClient } from "better-auth/client/plugins";
 import { toast } from "sonner";
+import { api } from "@/utils/api";
+import { t } from "i18next";
 
 export const authClient = createAuthClient({
   baseURL: import.meta.env.VITE_API_ENDPOINT,
@@ -47,4 +49,35 @@ export const authClient = createAuthClient({
   plugins: [anonymousClient()],
 });
 
+const resendVerification = async (email) => {
+  try {
+    const { data, error } = await authClient.sendVerificationEmail({
+      email: email,
+      callbackURL: "/api/redirect-app/verify-email", // Where to redirect the user after they click the link
+    });
+
+    api.clearSessionCache(); // Clear any cached session data after sending the verification email
+
+    if (error) {
+      console.error("Failed to send verification email:", error.message);
+      toast.error(
+        "Failed to send verification email. Please try again later or contact support.",
+      );
+      return;
+    }
+
+    return toast.info(
+      t("auth.verificationEmailSent", {
+        defaultValue:
+          "Verification email sent!, check your spam folder if you don't see it in your inbox.",
+      }),
+    );
+  } catch (error) {
+    toast.error(
+      "An unexpected error occurred while sending the verification email. Please try again later.",
+    );
+  }
+};
+
 export const { useSession, signIn, signUp, signOut } = authClient;
+export { resendVerification };

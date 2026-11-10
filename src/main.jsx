@@ -25,7 +25,13 @@ function renderApp() {
         <ThemeProvider>
           <DialogAlertProvider>
             <Suspense fallback={null}>
-              <Toaster richColors position="top-right" theme="dark" />
+              <Toaster
+                expand={true}
+                richColors
+                position="top-right"
+                theme="dark"
+                visibleToasts={4}
+              />
             </Suspense>
             <Router />
           </DialogAlertProvider>

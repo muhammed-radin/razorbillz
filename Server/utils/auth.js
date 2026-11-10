@@ -4,7 +4,13 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { admin, anonymous } from "better-auth/plugins";
 import { UserModel } from "../models/schema/user.js";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { decrypt, decryptStrict, encrypt } from "./crypt.js";
+import {
+  decrypt,
+  decryptStrict,
+  decryptField,
+  encrypt,
+  isEncrypted,
+} from "./crypto/index.js";
 import mongoose, { Mongoose } from "mongoose";
 import {
   ErrorEvent,
@@ -19,8 +25,39 @@ import {
   migrateOldUserToNewUser,
 } from "./auth.migrate.js";
 import { ac, ecommerceRoles } from "./permissions.js";
+import sendEmail from "./mailer.js";
+import storeConfig from "../shared/store.config.js";
+import { stripServerOwnedFields } from "./schemaMapper.js";
+import { db } from "./db.js";
+import {
+  buildMirrorUserFields,
+  emailVaultAdapter,
+} from "./crypto/emailVault.js";
 
 let authInstance = null;
+
+/* Session records do not always embed the user, so resolve the guest
+ * flag once per session lifecycle event. Guests must never be counted
+ * as logged-in users or get a lastLogin timestamp. */
+async function resolveSessionGuest(sessionData) {
+  if (sessionData?.user?.isAnonymous || sessionData?.isAnonymous) return true;
+
+  const userId = sessionData?.userId || sessionData?.user?.id;
+  if (!userId) return false;
+
+  try {
+    // Better Auth stores the authoritative user record (including
+    // isAnonymous) in its own validation collection. Guest users are
+    // intentionally absent from the app "users" collection, so querying
+    // UserModel alone always reports them as logged-in.
+    const record = await db.db
+      .collection("users_validation")
+      .findOne({ $or: [{ _id: userId }, { id: userId }] });
+    return Boolean(record?.isAnonymous);
+  } catch {
+    return false;
+  }
+}
 
 export default function createAuth(db) {
   if (authInstance) {
@@ -28,9 +65,16 @@ export default function createAuth(db) {
   }
 
   authInstance = betterAuth({
-    database: mongodbAdapter(
+    /* Email vaulting adapter: `users_validation.email` and
+     * `verification.identifier` are sealed at rest (envelope AES-GCM)
+     * and equality/prefix/substring searches translate to blind-index
+     * tokens (see utils/crypto/emailVault.js). Sign-in, verification
+     * links and password resets keep working on ciphertext. */
+    database: emailVaultAdapter(
       // Extract the raw MongoClient from your Mongoose connection pool
-      db,
+      mongodbAdapter(
+        db,
+      ),
     ),
     onAPIError: {
       onError: async (error, context) => {
@@ -81,6 +125,8 @@ export default function createAuth(db) {
                 isActive: true,
                 providedBy: userData.providedBy || "local",
                 preservedOldUserId: userData.preservedOldUserId || null,
+                /* Sealed email + blind-index tokens (email vaulting) */
+                ...buildMirrorUserFields(userData),
               });
 
               await applyBasicBetterAuthDataToUser(
@@ -124,7 +170,28 @@ export default function createAuth(db) {
         },
         update: {
           after: async (userData, context) => {
-            await UserModel.updateOne({ id: userData.id }, { $set: userData });
+            /* Mirror stays queryable on ciphertext: vaulted values +
+             * blind-index tokens are built from the (possibly sealed)
+             * Better Auth row (email vaulting). */
+            const mirrorFields = buildMirrorUserFields(userData);
+            const safeFields = stripServerOwnedFields(userData);
+            // Vault-owned keys must not be copied verbatim from the
+            // Better Auth row (their tokens differ per collection).
+            for (const key of [
+              "email", "email_idx", "email_prefix", "email_grams",
+              "name", "name_idx", "name_prefix", "name_grams",
+              "phoneNumber", "phone_idx", "phone_prefix", "phone_grams",
+              "image", "profilePicture",
+            ]) {
+              delete safeFields[key];
+            }
+            const updates = { ...safeFields, ...mirrorFields };
+            if (Object.keys(updates).length > 0) {
+              await UserModel.updateOne(
+                { id: userData.id },
+                { $set: updates },
+              );
+            }
             evt.fire(
               Evts.USER_PROFILE_UPDATED,
               new UserEvent({
@@ -140,11 +207,13 @@ export default function createAuth(db) {
       session: {
         create: {
           after: async (sessionData, context) => {
+            const isGuest = await resolveSessionGuest(sessionData);
             evt.fire(
               Evts.USER_LOGGED_IN,
               new SessionEvent({
                 type: Evts.USER_LOGGED_IN,
                 session: sessionData,
+                isGuest,
               }),
             );
             evt.fire(
@@ -152,6 +221,7 @@ export default function createAuth(db) {
               new SessionEvent({
                 type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest,
               }),
             );
           },
@@ -169,11 +239,15 @@ export default function createAuth(db) {
         },
         update: {
           after: async (sessionData, context) => {
+            // Session updates are refreshes/expiry bumps, not fresh
+            // logins: only record a site view so login analytics and
+            // lastLogin stay accurate.
             evt.fire(
-              Evts.USER_LOGGED_IN,
+              Evts.SITE_VIEWED,
               new SessionEvent({
-                type: Evts.USER_LOGGED_IN,
+                type: Evts.SITE_VIEWED,
                 session: sessionData,
+                isGuest: await resolveSessionGuest(sessionData),
               }),
             );
           },
@@ -186,7 +260,10 @@ export default function createAuth(db) {
         if (ctx.path === "/sign-in/email" || ctx.path === "/sign-up/email") {
           if (ctx.body && typeof ctx.body.password === "string") {
             try {
-              // 2. Decrypt client-encrypted password back to plain text
+              // 2. Decrypt client-obfuscated password back to plain text.
+              // Supports the envelope format ("ze1.…" — Tier A) and the
+              // legacy CryptoJS format shared with the current frontend;
+              // both are obfuscation-in-transit only, real protection is TLS.
               const plainPassword = decryptStrict(ctx.body.password);
 
               // 3. Mutate request body before Better Auth validates or hashes
@@ -231,14 +308,81 @@ export default function createAuth(db) {
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
-        // Null
+        /* EMAIL VAULTING — Better Auth rows carry sealed values; any
+         * response that surfaces a user decrypts PII so the client
+         * never sees ciphertext. */
+        try {
+          const returned = ctx?.context?.returned;
+          const user = returned?.user ?? (returned && returned.email && returned.name ? returned : null);
+          if (user && typeof user === "object") {
+            if (typeof user.email === "string") {
+              const plain = decryptField(user.email);
+              if (typeof plain === "string" && plain && plain.includes("@")) {
+                user.email = plain;
+              }
+            }
+            if (typeof user.name === "string") {
+              const plain = decryptField(user.name);
+              if (typeof plain === "string" && plain) {
+                user.name = plain;
+              }
+            }
+            if (typeof user.image === "string" && isEncrypted(user.image)) {
+              const plain = decryptField(user.image);
+              if (typeof plain === "string" && plain) {
+                user.image = plain;
+              }
+            }
+            if (typeof user.profilePicture === "string" && isEncrypted(user.profilePicture)) {
+              const plain = decryptField(user.profilePicture);
+              if (typeof plain === "string" && plain) {
+                user.profilePicture = plain;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[auth] response PII decrypt skipped:", err?.message);
+        }
       }),
+    },
+    emailVerification: {
+      autoSignInAfterVerification: true,
+      sendOnSignUp: false, // Disable automatic email verification on sign-up
+      sendVerificationEmail: async ({ user, url, token }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Verify your email for " + storeConfig.brand.name.en,
+          templateName: "verification.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            verificationType: "link",
+            verificationUrl: url,
+            code: "",
+            expiryMinutes: 15,
+            logoUrl: storeConfig.assets.ogLogo32,
+            name: decrypt(user.name) || decrypt(user.email).split("@")[0],
+          },
+        });
+      },
     },
     emailAndPassword: {
       enabled: true,
-      requireEmailVerification: false,
+      requireEmailVerification: true,
       onExistingUserSignUp: async ({ user }, req) => {
         // Custom logic for handling existing users during sign-up
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Sign-up attempt with your email",
+          templateName: "signup-attempt.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            logoUrl: storeConfig.assets.ogLogo32,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            actionUrl: process.env.FRONTEND_URL,
+            actionLabel: "Go to " + storeConfig.brand.name.en,
+          },
+        });
         throw new APIError(
           "BAD_REQUEST",
           "User already exists. Please log-in instead.",
@@ -248,11 +392,31 @@ export default function createAuth(db) {
           400,
         );
       },
+
       minPasswordLength: 8,
+      revokeSessionsOnPasswordReset: true,
+      resetPasswordTokenExpiresIn: 15 * 60, // 15 minutes in seconds
+      sendResetPassword: async ({ user, url }, request) => {
+        sendEmail({
+          email: decrypt(user.email),
+          subject: "Reset your " + storeConfig.brand.name.en + " password",
+          templateName: "reset-password.ejs",
+          variables: {
+            appName: storeConfig.brand.name.en,
+            email: decrypt(user.email),
+            name: decrypt(user.name),
+            logoUrl: storeConfig.assets.ogLogo32,
+            actionUrl: url,
+            actionLabel: "Reset password",
+            expiryMinutes: 15,
+          },
+        });
+      },
     },
     plugins: [
       anonymous({
-        emailDomainName: "guest.razorbills.app",
+        emailDomainName:
+          "guest." + storeConfig.brand.name.en.toLowerCase() + ".app",
         generateName: () =>
           decrypt(`Guest-${Math.floor(Math.random() * 100000)}`),
         onLinkAccount: async ({ anonymousUser, newUser }) => {

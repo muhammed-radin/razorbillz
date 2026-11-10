@@ -149,7 +149,7 @@ class EventEmitter {
     // --------------------------------------
 
     for (const entry of [...this.listenListeners]) {
-      entry.listener(eventInfo);
+      this.#invokeSafely(entry.listener, event, eventInfo);
     }
 
     // --------------------------------------
@@ -163,7 +163,7 @@ class EventEmitter {
     }
 
     for (const entry of [...listeners]) {
-      entry.listener(...data);
+      this.#invokeSafely(entry.listener, event, data);
     }
 
     return true;
@@ -265,6 +265,30 @@ class EventEmitter {
   // Internal
   // ==========================================
 
+  /* Analytics, metrics and logging listeners must never be able to break
+   * a business request. Listener failures are isolated and reported here. */
+  #invokeSafely(listener, eventName, args) {
+    try {
+      const result = Array.isArray(args)
+        ? listener(...args)
+        : listener(args);
+
+      if (result && typeof result.then === "function") {
+        result.catch((error) => {
+          console.error(
+            `[events] async listener for "${String(eventName)}" failed:`,
+            error?.message || error,
+          );
+        });
+      }
+    } catch (error) {
+      console.error(
+        `[events] listener for "${String(eventName)}" failed:`,
+        error?.message || error,
+      );
+    }
+  }
+
   #validateListener(listener) {
     if (typeof listener !== "function") {
       throw new TypeError("Listener must be a function");
@@ -317,6 +341,7 @@ class ClassicEvent {
     cartId = null,
     productId = null,
     actorId = null,
+    quantity = null,
   }) {
     this.type = type;
     this.timestamp = Date.now();
@@ -346,6 +371,7 @@ class ClassicEvent {
     this.cartId = cartId;
     this.productId = productId;
     this.actorId = actorId;
+    this.quantity = quantity;
 
     this.id = id
       ? id

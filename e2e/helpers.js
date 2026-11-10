@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs";
 export const test = base;
 export { expect };
 
-export const API = "http://localhost:3000";
+export const API = "http://localhost:4128";
 
 /* Address encryption in Node — identical scheme to src/utils/crypt.js
  * (CryptoJS AES with the VITE_CRYPTED key, JSON.stringify per field).
@@ -20,7 +20,9 @@ export function encryptAddressForTest(address) {
   return Object.fromEntries(
     Object.entries(address).map(([key, value]) => [
       key,
-      key === "id" ? value : CryptoJS.AES.encrypt(JSON.stringify(value), CRYPT_KEY).toString(),
+      key === "id"
+        ? value
+        : CryptoJS.AES.encrypt(JSON.stringify(value), CRYPT_KEY).toString(),
     ]),
   );
 }

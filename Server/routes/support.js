@@ -10,11 +10,14 @@ import {
   TicketStatus,
   TicketCategory,
   TicketPriority,
+  decryptSupportTicket,
+  supportSubjectSearchTokens,
 } from "../models/schema/support.js";
 import { OrderModel } from "../models/schema/order.js";
 import { evt, Evts } from "../utils/events.manage.js";
 import { Errors } from "../utils/httpError.js";
 import { ah } from "../utils/middlewares/errorHandler.js";
+import { isStaffUser } from "../utils/roles.js";
 
 const router = express.Router();
 
@@ -74,8 +77,7 @@ async function assertOwnedOrder(orderId, userId) {
   return order;
 }
 
-const isStaff = (req) =>
-  req.user?.role === "admin" || req.user?.role === "owner";
+const isStaff = (req) => isStaffUser(req.user);
 
 async function loadTicketOrThrow(id, req) {
   const ticket = await SupportTicketModel.findOne({ id });
@@ -86,11 +88,12 @@ async function loadTicketOrThrow(id, req) {
   return ticket;
 }
 
-/* Customer-visible shape: strips audit trail (internal). */
+/* Customer-visible shape: strips audit trail (internal).
+ * Ticket content is sealed at rest — decrypt for display. */
 function publicTicket(t) {
-  const o = t.toObject ? t.toObject() : t;
-  const { audit, ...rest } = o;
-  return rest;
+  const o = decryptSupportTicket(t);
+  delete o.audit;
+  return o;
 }
 
 const VALID_TRANSITIONS = {
@@ -135,6 +138,7 @@ router.post(
     });
     safeEvent(Evts.TICKET_CREATED, {
       ticketId: ticket.id,
+      userId: ticket.userId,
       category,
       orderId: ticket.orderId,
     });
@@ -160,7 +164,7 @@ router.get(
     ]);
     return res.json({
       success: true,
-      tickets: tickets.map(({ audit, ...rest }) => rest),
+      tickets: tickets.map(publicTicket),
       total,
     });
   }),
@@ -173,31 +177,39 @@ router.get(
   passUserAuth,
   ah(async (req, res) => {
     const ticket = await loadTicketOrThrow(req.params.id, req);
-    if (isStaff(req)) return res.json({ success: true, ticket });
+    if (isStaff(req))
+      return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
     return res.json({ success: true, ticket: publicTicket(ticket) });
   }),
 );
 
-/* POST /support/:id/messages — follow-up (reopens resolved). */
+/* POST /support/:id/messages — CUSTOMER follow-up only. Staff replies
+ * go through POST /:id/reply so a message's direction can never be
+ * derived from a role check on the customer endpoint. */
 router.post(
   "/:id/messages",
   requireAuth,
   passUserAuth,
   messageLimiter,
   ah(async (req, res) => {
-    const ticket = await loadTicketOrThrow(req.params.id, req);
-    if (ticket.status === TicketStatus.CLOSED && !isStaff(req)) {
+    const ticket = await SupportTicketModel.findOne({ id: req.params.id });
+    if (!ticket) throw Errors.notFound("Ticket not found.");
+    if (ticket.userId !== req.user?.id) {
+      throw Errors.forbidden(
+        "Only the ticket owner can post customer messages. Staff replies use the reply endpoint.",
+      );
+    }
+    if (ticket.status === TicketStatus.CLOSED) {
       throw Errors.validation("Closed tickets cannot receive new messages.");
     }
     const text = validateMessage(req.body?.message);
-    const sender = isStaff(req) ? "admin" : "user";
     ticket.messages.push({
-      sender,
+      sender: "user",
       senderId: req.user?.id ?? null,
       body: text,
     });
     let reopened = false;
-    if (ticket.status === TicketStatus.RESOLVED && sender === "user") {
+    if (ticket.status === TicketStatus.RESOLVED) {
       ticket.status = TicketStatus.OPEN;
       reopened = true;
       ticket.audit.push({ action: "reopened", actorId: req.user?.id });
@@ -205,12 +217,52 @@ router.post(
     await ticket.save();
     safeEvent(reopened ? Evts.TICKET_REOPENED : Evts.TICKET_REPLIED, {
       ticketId: ticket.id,
-      sender,
+      userId: ticket.userId,
+      orderId: ticket.orderId,
+      sender: "user",
     });
-    return res.json({
-      success: true,
-      ticket: isStaff(req) ? ticket : publicTicket(ticket),
+    return res.json({ success: true, ticket: publicTicket(ticket) });
+  }),
+);
+
+/* POST /support/:id/reply — STAFF-only reply (admin UI). Always writes
+ * sender:"admin"; customers cannot reach it (requireAdmin + respond). */
+router.post(
+  "/:id/reply",
+  requireAuth,
+  requireAdmin,
+  requirePermission({ support: ["respond"] }),
+  messageLimiter,
+  ah(async (req, res) => {
+    const ticket = await loadTicketOrThrow(req.params.id, req);
+    if (ticket.status === TicketStatus.CLOSED) {
+      throw Errors.validation("Closed tickets cannot receive replies.");
+    }
+    const text = validateMessage(req.body?.message ?? req.body?.body);
+    ticket.messages.push({
+      sender: "admin",
+      senderId: req.user?.id ?? null,
+      body: text,
     });
+
+    /* Keep the ticket workflow in sync with the reply without
+     * fabricating a resolution. Resolved tickets reopen for follow-up. */
+    let reopened = false;
+    if (ticket.status === TicketStatus.OPEN || ticket.status === TicketStatus.PENDING) {
+      ticket.status = TicketStatus.IN_PROGRESS;
+    } else if (ticket.status === TicketStatus.RESOLVED) {
+      ticket.status = TicketStatus.OPEN;
+      reopened = true;
+    }
+    ticket.audit.push({ action: "staff_replied", actorId: req.user?.id });
+    await ticket.save();
+    safeEvent(reopened ? Evts.TICKET_REOPENED : Evts.TICKET_REPLIED, {
+      ticketId: ticket.id,
+      userId: ticket.userId,
+      orderId: ticket.orderId,
+      sender: "admin",
+    });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -231,9 +283,22 @@ router.get(
     }
     if (req.query.orderId) q.orderId = req.query.orderId;
     if (req.query.search) {
+      // Subject content is sealed at rest; admin search goes through
+      // blind-index families: exact token, anchored prefix token, and
+      // trigram $all for substring — over ciphertext only.
+      let tokens = null;
+      try {
+        tokens = supportSubjectSearchTokens(String(req.query.search));
+      } catch {
+        tokens = null;
+      }
       q.$or = [
         { id: { $regex: String(req.query.search), $options: "i" } },
-        { subject: { $regex: String(req.query.search), $options: "i" } },
+        ...(tokens?.eq ? [{ subject_idx: tokens.eq }] : []),
+        ...(tokens?.prefix ? [{ subject_prefix: tokens.prefix }] : []),
+        ...(tokens?.grams?.length
+          ? [{ subject_grams: { $all: tokens.grams } }]
+          : []),
       ];
     }
     const [tickets, total, counts] = await Promise.all([
@@ -245,7 +310,7 @@ router.get(
     ]);
     return res.json({
       success: true,
-      tickets,
+      tickets: tickets.map(decryptSupportTicket),
       total,
       byStatus: Object.fromEntries(counts.map((c) => [c._id, c.count])),
     });
@@ -269,13 +334,14 @@ router.patch(
       );
     }
     ticket.status = next;
-    if (next === TicketStatus.RESOLVED || next === TicketStatus.CLOSED) {
-      ticket.resolutionNote = String(req.body?.note ?? "").slice(0, 1000) || null;
+    const note = String(req.body?.note ?? "").trim();
+    if ((next === TicketStatus.RESOLVED || next === TicketStatus.CLOSED) && note) {
+      ticket.resolutionNote = note.slice(0, 1000);
     }
     ticket.audit.push({
       action: `status:${next}`,
       actorId: req.user?.id,
-      note: ticket.resolutionNote,
+      note: note || null,
     });
     await ticket.save();
     safeEvent(
@@ -284,9 +350,9 @@ router.patch(
         : next === TicketStatus.CLOSED
           ? Evts.TICKET_CLOSED
           : Evts.TICKET_REPLIED,
-      { ticketId: ticket.id, status: next },
+      { ticketId: ticket.id, userId: ticket.userId, status: next },
     );
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -304,7 +370,7 @@ router.patch(
       note: ticket.assignedAdmin,
     });
     await ticket.save();
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -321,7 +387,7 @@ router.patch(
     ticket.priority = req.body.priority;
     ticket.audit.push({ action: `priority:${ticket.priority}`, actorId: req.user?.id });
     await ticket.save();
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 

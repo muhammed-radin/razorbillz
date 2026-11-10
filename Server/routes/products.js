@@ -234,11 +234,24 @@ router.get("/:productid", requireSession, async function (req, res) {
   if (!product) {
     return res.status(404).json({ error: "Product not found" });
   }
+
+  // Expose the aggregate rating at the top level for storefront clients;
+  // the authoritative counters live in `metrics`.
+  const data =
+    typeof product.toObject === "function" ? product.toObject() : product;
+  const metrics = data.metrics ?? data.meterics ?? {};
+  const payload = {
+    ...data,
+    rating: Number(metrics.rating ?? data.rating ?? 0),
+    reviewCount: Number(metrics.reviewCount ?? data.reviewCount ?? 0),
+    commentCount: Number(metrics.commentCount ?? data.commentCount ?? 0),
+  };
+
   if (minimize === "true") {
-    const minimalProduct = new MinimalProduct(product);
+    const minimalProduct = new MinimalProduct(payload);
     return res.json(minimalProduct);
   }
-  res.json(product);
+  res.json(payload);
 });
 
 router.post(
@@ -328,19 +341,21 @@ router.delete(
   async function (req, res) {
     const productid = req.params.productid;
     const deleted = await ProductModel.deleteOne({ id: productid });
-    evt.fire(
-      Evts.PRODUCT_DELETED,
-      new ProductEvent({
-        type: Evts.PRODUCT_DELETED,
-        product: deleted,
-        response: null,
-        isReq: true,
-        reqPath: req.url,
-        userId: req.user.id,
-        actorId: req.user.id,
-        productId: productid,
-      }),
-    );
+    if ((deleted?.deletedCount ?? 0) > 0) {
+      evt.fire(
+        Evts.PRODUCT_DELETED,
+        new ProductEvent({
+          type: Evts.PRODUCT_DELETED,
+          product: deleted,
+          response: null,
+          isReq: true,
+          reqPath: req.url,
+          userId: req.user.id,
+          actorId: req.user.id,
+          productId: productid,
+        }),
+      );
+    }
     res.json(deleted);
   },
 );

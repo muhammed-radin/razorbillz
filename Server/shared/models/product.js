@@ -15,8 +15,10 @@ export class MinimalProduct {
     tags,
     category,
     stock,
+    metrics,
     meterics,
     owner,
+    productId,
   } = {}) {
     const product =
       typeof id === "object" && id !== null
@@ -37,11 +39,14 @@ export class MinimalProduct {
             tags,
             category,
             stock,
+            metrics,
             meterics,
             owner,
+            productId,
           };
 
     this.id = product.id;
+    this.productId = product.productId ?? product.id;
     this._id = product.id || product._id;
     this.title = product.title;
     this.price = product.price;
@@ -57,7 +62,8 @@ export class MinimalProduct {
     this.tags = product.tags;
     this.category = product.category;
     this.stock = product.stock;
-    this.meterics = product.meterics;
+    this.metrics = product.metrics ?? product.meterics ?? null;
+    this.meterics = this.metrics;
     this.owner = product.owner;
   }
 }

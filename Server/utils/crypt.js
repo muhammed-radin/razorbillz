@@ -1,5 +1,16 @@
 import CryptoJS from "crypto-js";
 
+/* =========================================================
+ * DEPRECATED — legacy CryptoJS AES field encryption.
+ *
+ * Superseded by ../utils/crypto/ (authenticated AES-256-GCM
+ * envelope encryption + blind indexes). Kept because this module
+ * IS the read path for rows stored before the encryption upgrade
+ * (ciphertext prefix `U2FsdGVkX1…`) and the current frontend's
+ * sign-in password obfuscation. Do NOT use for new writes; new
+ * code imports from ../utils/crypto/index.js.
+ * ========================================================= */
+
 function validateEncrypted(ciphertext) {
   if (typeof ciphertext !== "string" || !ciphertext.startsWith("U2FsdGVkX1")) {
     return false;
