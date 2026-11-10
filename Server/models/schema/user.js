@@ -19,6 +19,19 @@ export const UserSchema = new Schema(
     addressBook: { type: [AddressSchema], default: [], required: true },
     address: { type: AddressSchema, default: null },
     phoneNumber: { type: String, default: "" },
+    /* Blind-index tokens (HMAC-SHA256 over normalized PII) enabling
+     * exact-match admin search on sealed values. Server-internal. */
+    name_idx: { type: String, default: null },
+    email_idx: { type: String, default: null },
+    phone_idx: { type: String, default: null },
+    /* Advanced search families (email vaulting): anchored prefix
+     * tokens (membership) + trigram tokens ($all substring). */
+    name_prefix: { type: [String], default: undefined },
+    name_grams: { type: [String], default: undefined },
+    email_prefix: { type: [String], default: undefined },
+    email_grams: { type: [String], default: undefined },
+    phone_prefix: { type: [String], default: undefined },
+    phone_grams: { type: [String], default: undefined },
     preferences: { type: Schema.Types.Mixed, default: {} },
     providedBy: { type: String, default: "local" },
 

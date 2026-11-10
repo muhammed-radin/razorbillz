@@ -8,7 +8,7 @@ import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import { useMemory } from "../utils/memory.js";
 import { priceOrderItems } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
-import { createOrderRecord, releaseOrderStock } from "../utils/orderFactory.js";
+import { createOrderRecord, releaseOrderStock, decryptOrderAddresses } from "../utils/orderFactory.js";
 import { evt, Evts, OrderEvent } from "../utils/events.manage.js";
 import {
   OrderModel,
@@ -462,7 +462,8 @@ router.get("/user-orders", requireAuth, passUserAuth, async (req, res) => {
       userId,
     });
 
-    return res.json(orders);
+    // Addresses are sealed at rest — open them only for this response.
+    return res.json(orders.map((o) => decryptOrderAddresses(o)));
   } catch (err) {
     console.error("Error fetching user orders:", err);
 
@@ -500,7 +501,7 @@ router.get("/:id", requireAuth, passUserAuth, async (req, res) => {
       });
     }
 
-    return res.json(order);
+    return res.json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error fetching order:", err);
 
@@ -550,7 +551,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
       if (existing) {
         return res
           .status(200)
-          .json({ ...existing.toObject(), deduplicated: true });
+          .json({ ...decryptOrderAddresses(existing), deduplicated: true });
       }
     } catch {
       // fall through to creation
@@ -652,7 +653,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
       confirm: true,
       confirmNote: "COD order confirmed",
     });
-    return res.status(201).json(order);
+    return res.status(201).json(decryptOrderAddresses(order));
   } catch (err) {
     console.error("Error creating order:", err);
 
@@ -665,7 +666,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
         if (existing) {
           return res
             .status(200)
-            .json({ ...existing.toObject(), deduplicated: true });
+            .json({ ...decryptOrderAddresses(existing), deduplicated: true });
         }
       }
       return res.status(409).json({

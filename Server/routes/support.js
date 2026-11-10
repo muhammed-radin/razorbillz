@@ -10,6 +10,8 @@ import {
   TicketStatus,
   TicketCategory,
   TicketPriority,
+  decryptSupportTicket,
+  supportSubjectSearchTokens,
 } from "../models/schema/support.js";
 import { OrderModel } from "../models/schema/order.js";
 import { evt, Evts } from "../utils/events.manage.js";
@@ -86,11 +88,12 @@ async function loadTicketOrThrow(id, req) {
   return ticket;
 }
 
-/* Customer-visible shape: strips audit trail (internal). */
+/* Customer-visible shape: strips audit trail (internal).
+ * Ticket content is sealed at rest — decrypt for display. */
 function publicTicket(t) {
-  const o = t.toObject ? t.toObject() : t;
-  const { audit, ...rest } = o;
-  return rest;
+  const o = decryptSupportTicket(t);
+  delete o.audit;
+  return o;
 }
 
 const VALID_TRANSITIONS = {
@@ -174,7 +177,8 @@ router.get(
   passUserAuth,
   ah(async (req, res) => {
     const ticket = await loadTicketOrThrow(req.params.id, req);
-    if (isStaff(req)) return res.json({ success: true, ticket });
+    if (isStaff(req))
+      return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
     return res.json({ success: true, ticket: publicTicket(ticket) });
   }),
 );
@@ -210,10 +214,10 @@ router.post(
       orderId: ticket.orderId,
       sender,
     });
-    return res.json({
-      success: true,
-      ticket: isStaff(req) ? ticket : publicTicket(ticket),
-    });
+    const open = isStaff(req)
+      ? decryptSupportTicket(ticket)
+      : publicTicket(ticket);
+    return res.json({ success: true, ticket: open });
   }),
 );
 
@@ -234,9 +238,22 @@ router.get(
     }
     if (req.query.orderId) q.orderId = req.query.orderId;
     if (req.query.search) {
+      // Subject content is sealed at rest; admin search goes through
+      // blind-index families: exact token, anchored prefix token, and
+      // trigram $all for substring — over ciphertext only.
+      let tokens = null;
+      try {
+        tokens = supportSubjectSearchTokens(String(req.query.search));
+      } catch {
+        tokens = null;
+      }
       q.$or = [
         { id: { $regex: String(req.query.search), $options: "i" } },
-        { subject: { $regex: String(req.query.search), $options: "i" } },
+        ...(tokens?.eq ? [{ subject_idx: tokens.eq }] : []),
+        ...(tokens?.prefix ? [{ subject_prefix: tokens.prefix }] : []),
+        ...(tokens?.grams?.length
+          ? [{ subject_grams: { $all: tokens.grams } }]
+          : []),
       ];
     }
     const [tickets, total, counts] = await Promise.all([
@@ -248,7 +265,7 @@ router.get(
     ]);
     return res.json({
       success: true,
-      tickets,
+      tickets: tickets.map(decryptSupportTicket),
       total,
       byStatus: Object.fromEntries(counts.map((c) => [c._id, c.count])),
     });
@@ -289,7 +306,7 @@ router.patch(
           : Evts.TICKET_REPLIED,
       { ticketId: ticket.id, userId: ticket.userId, status: next },
     );
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -307,7 +324,7 @@ router.patch(
       note: ticket.assignedAdmin,
     });
     await ticket.save();
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 
@@ -324,7 +341,7 @@ router.patch(
     ticket.priority = req.body.priority;
     ticket.audit.push({ action: `priority:${ticket.priority}`, actorId: req.user?.id });
     await ticket.save();
-    return res.json({ success: true, ticket });
+    return res.json({ success: true, ticket: decryptSupportTicket(ticket) });
   }),
 );
 

@@ -18,7 +18,10 @@ const here = path.dirname(fileURLToPath(import.meta.url)); // Server/utils
 const serverDir = path.resolve(here, "..");
 
 const loaded = [];
-for (const p of [path.join(serverDir, ".env"), path.join(process.cwd(), ".env")]) {
+for (const p of [
+  path.join(serverDir, ".env"),
+  path.join(process.cwd(), ".env"),
+]) {
   try {
     const r = dotenv.config({ path: p });
     if (!r.error) loaded.push(p);
@@ -64,7 +67,9 @@ export function configPresence() {
 export function validateStartupConfig() {
   const p = configPresence();
   // eslint-disable-next-line no-console
-  console.log(`[config] env files loaded: ${p.envFilesLoaded.join(", ") || "(none)"}`);
+  console.log(
+    `[config] env files loaded: ${p.envFilesLoaded.join(", ") || "(none)"}`,
+  );
   if (!p.razorpay.RAZORPAY_KEY_ID || !p.razorpay.RAZORPAY_KEY_SECRET) {
     // eslint-disable-next-line no-console
     console.warn(
@@ -99,6 +104,10 @@ export function validateStartupConfig() {
   if (!p.database.MONGODB_URI) {
     // eslint-disable-next-line no-console
     console.warn("[config] MONGODB_URI missing — database unavailable.");
+  } else {
+    // eslint-disable-next-line no-console
+    console.log("[config] MONGODB_URI present — database enabled.");
+    console.log(`[config] MONGODB_URI host: ${process.env.MONGODB_URI}`);
   }
   return p;
 }

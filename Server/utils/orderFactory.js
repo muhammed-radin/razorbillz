@@ -11,12 +11,25 @@ import {
 } from "../models/schema/order.js";
 import { reserveStock, releaseStock } from "./inventory.js";
 import { evt, Evts, OrderEvent } from "./events.manage.js";
+import {
+  openAddressObject,
+  sealAddressObject,
+} from "./crypto/index.js";
 
 /* =========================================================
  * Single order-creation path for COD (POST /orders) and
  * verified prepaid (payments verify/webhook). Stock is
  * reserved BEFORE the document is created and released if
  * creation fails — attempts/failed payments never touch stock.
+ *
+ * Address snapshots (name/street/city/state/postalCode/…) are
+ * SEALED at rest (envelope AES-GCM + blind indexes) and only
+ * opened transiently when an operator/courier flow needs them:
+ *   - decryptOrderAddresses(order) for read endpoints
+ *   - shipmozo payload build (label creation) opens on the fly
+ * The client submits plaintext addresses over TLS only at these
+ * request boundaries (just-in-time reveal); analytics events fire
+ * with the SEALED snapshot so plaintext never spreads sideways.
  * ========================================================= */
 
 export function newOrderId() {
@@ -64,13 +77,16 @@ function buildOrderData({
     fulfillment: {
       status: FulfillmentStatus.UNFULFILLED,
       packageWeightKg: priced.weightKg,
+      // Kept plaintext intentionally: courier-ops queries (rate quotes,
+      // logistics filters) key on pincode. Personal delivery details
+      // (name/phone/street/email) are sealed inside shippingAddress.
       deliveryPincode: shippingAddress?.postalCode ?? null,
     },
     cancellation: { status: CancellationStatus.NONE },
     return: { status: ReturnStatus.NONE },
     refund: { status: RefundStatus.NONE },
-    shippingAddress,
-    billingAddress,
+    shippingAddress: sealAddressObject(shippingAddress),
+    billingAddress: sealAddressObject(billingAddress),
   };
 }
 
@@ -164,4 +180,28 @@ export async function releaseOrderStock(order) {
   }
 }
 
-export default { newOrderId, createOrderRecord, releaseOrderStock };
+/* Open sealed order addresses for read/consumer paths. Returns a new
+ * object; tolerant of legacy (plaintext) snapshots stored pre-upgrade
+ * (openAddressObject passes non-envelope values through). */
+export function decryptOrderAddresses(order) {
+  if (!order) return order;
+  const plain =
+    typeof order.toObject === "function" ? order.toObject() : order;
+  const out = { ...plain };
+  if (plain.shippingAddress) {
+    out.shippingAddress = openAddressObject(plain.shippingAddress);
+  }
+  if (plain.billingAddress) {
+    out.billingAddress = openAddressObject(plain.billingAddress);
+  }
+  delete out.shippingAddress?.searchIdx;
+  delete out.billingAddress?.searchIdx;
+  return out;
+}
+
+export default {
+  newOrderId,
+  createOrderRecord,
+  releaseOrderStock,
+  decryptOrderAddresses,
+};

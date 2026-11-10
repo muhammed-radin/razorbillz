@@ -43,8 +43,27 @@ function safeEvent(name, payload) {
   }
 }
 
+import { openAddressObject } from "../utils/crypto/index.js";
+
 async function loadOrderForAdmin(orderId) {
-  return OrderModel.findOne({ id: orderId });
+  const order = await OrderModel.findOne({ id: orderId });
+  if (!order) return null;
+
+  /* Order address snapshots are sealed at rest. Courier-ops flows need
+   * the plaintext transiently (push-order payload, pincodes) — open in
+   * memory only; the doc is re-×redacted-by-the-seal when saved since
+   * the stored subdoc fields are not modified here unless a flow
+   * assigns new values, in which case the new flow must re-seal via
+   * sealAddressObject (see utils/orderFactory.js). */
+  for (const key of ["shippingAddress", "billingAddress"]) {
+    if (order[key] && typeof order[key].toObject === "function") {
+      const opened = openAddressObject(order[key].toObject());
+      for (const [k, v] of Object.entries(opened)) {
+        order[key][k] = v;
+      }
+    }
+  }
+  return order;
 }
 
 function applyAwbToOrder(order, { awbNumber, courier, lrNumber, source }) {

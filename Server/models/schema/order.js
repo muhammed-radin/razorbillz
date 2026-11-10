@@ -1,4 +1,5 @@
 import mongoose, { Schema } from "mongoose";
+import { isSealed, sealString } from "../../utils/crypto/index.js";
 
 /* =========================================================
  * ENUMS
@@ -1590,6 +1591,32 @@ OrderSchema.index({ "payment.razorpayOrderId": 1 }, { sparse: true });
 OrderSchema.index({ "payment.razorpayPaymentId": 1 }, { sparse: true });
 OrderSchema.index({ "fulfillment.awb": 1 }, { sparse: true });
 OrderSchema.index({ "payment.method": 1, "payment.status": 1 });
+
+/* =========================================================
+ * AT-REST ADDRESS SEALING (Tier A envelope encryption)
+ *
+ * Whatever writes the snapshot — COD checkout, verified prepaid
+ * (payments verify/webhook), an admin editing data mid-flow — every
+ * plaintext address string is sealed with AES-256-GCM just before
+ * validation persists it. Sealed values (ze1.…) pass through
+ * untouched, so re-sealing legacy plaintext rows happens lazily on
+ * any save. The shipmozo/ops flows open the snapshot transiently
+ * (routes/shipments.js) and re-seal automatically on save.
+ * ========================================================= */
+
+OrderSchema.pre("validate", async function () {
+  for (const parentKey of ["shippingAddress", "billingAddress"]) {
+    const addr = this[parentKey];
+    if (!addr || typeof addr !== "object") continue;
+    for (const [field, value] of Object.entries(addr)) {
+      if (typeof value === "string" && value && !isSealed(value)) {
+        this[parentKey][field] = sealString(value, {
+          context: `order:${field}`,
+        });
+      }
+    }
+  }
+});
 
 /* =========================================================
  * MODEL

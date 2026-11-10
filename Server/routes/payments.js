@@ -26,7 +26,11 @@ import {
 import { priceOrderItems, PRICING_DEFAULTS } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
 import { reserveStock } from "../utils/inventory.js";
-import { createOrderRecord } from "../utils/orderFactory.js";
+import { createOrderRecord, decryptOrderAddresses } from "../utils/orderFactory.js";
+import {
+  openAddressObject,
+  sealAddressObject,
+} from "../utils/crypto/index.js";
 import { evt, Evts } from "../utils/events.manage.js";
 import { db } from "../utils/db.js";
 import { HttpError, Errors } from "../utils/httpError.js";
@@ -181,8 +185,12 @@ router.post(
       pricedTotal: priced.totalAmount,
       currency: "INR",
       pricedSnapshot: priced,
-      shippingAddress: legacyOrder?.shippingAddress ?? shippingAddress,
-      billingAddress: legacyOrder?.billingAddress ?? billingAddress,
+      shippingAddress: sealAddressObject(
+        legacyOrder?.shippingAddress ?? shippingAddress,
+      ),
+      billingAddress: sealAddressObject(
+        legacyOrder?.billingAddress ?? billingAddress,
+      ),
       razorpayOrderId: rzp.id,
       legacyOrderId: legacyOrder?.id ?? null,
       status: AttemptStatus.CREATED,
@@ -294,8 +302,8 @@ async function confirmAttemptOrder(attempt, { razorpayPaymentId, razorpaySignatu
       order = await createOrderRecord({
         userId: claimed.userId,
         priced: snap,
-        shippingAddress: claimed.shippingAddress,
-        billingAddress: claimed.billingAddress,
+        shippingAddress: openAddressObject(claimed.shippingAddress),
+        billingAddress: openAddressObject(claimed.billingAddress),
         method: PaymentMethod.RAZORPAY,
         idempotencyKey: claimed.idempotencyKey,
         paymentFields: {
@@ -413,7 +421,7 @@ router.post(
     });
     return res.status(deduplicated ? 200 : 201).json({
       success: true,
-      order,
+      order: decryptOrderAddresses(order),
       ...(deduplicated ? { deduplicated: true } : {}),
     });
   }),
@@ -662,7 +670,9 @@ router.post(
           ),
         });
       }
-      return res.status(200).json({ success: true, order: updated });
+      return res
+        .status(200)
+        .json({ success: true, order: decryptOrderAddresses(updated) });
     } catch (err) {
       safeEvent(Evts.COD_COLLECTION_FAILED, {
         orderId: req.params.id,

@@ -6,7 +6,10 @@ import {
 } from "../utils/middlewares/reqiuredAuth.js";
 import { evt, Evts, ErrorEvent, CommentEvent } from "../utils/events.manage.js";
 import { AddressSchema } from "../models/schema/address.js";
-import { decryptAddress, encryptAddress } from "../utils/crypt.js";
+import {
+  decryptAddress,
+  encryptAddress,
+} from "../utils/crypto/index.js";
 
 const router = express.Router();
 

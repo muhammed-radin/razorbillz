@@ -11,6 +11,10 @@ import { globalMemory } from "../utils/cache-utils/global-cache.js";
 import { productMemoryCache } from "../utils/cache-utils/product-data.js";
 import { productFeedCache } from "../utils/cache-utils/product-feed.js";
 import { productStatusCache } from "../utils/cache-utils/product-status.js";
+import {
+  encryptField,
+  decryptField,
+} from "../utils/crypto/index.js";
 
 const router = express.Router();
 
@@ -92,6 +96,39 @@ async function bumpCommentCount(productId, delta) {
 }
 
 /* =========================================================
+ * Reviewer PII vaulting (Tier A)
+ * ---------------------------------------------------------
+ * userName/userEmail/userAvatar are sealed at rest. Comments
+ * are PUBLIC on display, so reads decrypt; the database itself
+ * holds only ciphertext. (No index tokens: comment search is not
+ * offered — add *_idx families here if a search UI appears.)
+ * ========================================================= */
+
+function sealCommentAuthorFields(fields = {}) {
+  const set = {};
+  if (fields.userName) {
+    set.userName = encryptField(fields.userName, { context: "comment:userName" });
+  }
+  if (fields.userEmail) {
+    set.userEmail = encryptField(fields.userEmail, { context: "comment:userEmail" });
+  }
+  if (fields.userAvatar) {
+    set.userAvatar = encryptField(fields.userAvatar, { context: "comment:userAvatar" });
+  }
+  return set;
+}
+
+function decryptComment(comment) {
+  if (!comment) return comment;
+  return {
+    ...comment,
+    userName: decryptField(comment.userName),
+    userEmail: decryptField(comment.userEmail),
+    userAvatar: decryptField(comment.userAvatar),
+  };
+}
+
+/* =========================================================
  * POST /comments — create or update the user's review
  * ========================================================= */
 
@@ -122,9 +159,7 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
         $setOnInsert: {
           productId,
           userId,
-          userName: name,
-          userEmail: email,
-          userAvatar: avatar ? avatar : "",
+          ...sealCommentAuthorFields({ userName: name, userEmail: email, userAvatar: avatar ? avatar : "" }),
           createdAt: new Date(),
         },
       },
@@ -138,11 +173,11 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
       evt.fire(
         Evts.PRODUCT_COMMENT_UPDATED,
         new CommentEvent({
-          comment,
+          comment: decryptComment(existing),
           type: Evts.PRODUCT_COMMENT_UPDATED,
         }),
       );
-      return res.status(200).json(comment);
+      return res.status(200).json(decryptComment(existing));
     }
 
     await bumpCommentCount(productId, 1);
@@ -150,12 +185,12 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
     evt.fire(
       Evts.PRODUCT_COMMENTED,
       new CommentEvent({
-        comment,
+        comment: decryptComment(comment),
         type: Evts.PRODUCT_COMMENTED,
       }),
     );
 
-    return res.status(201).json(comment);
+    return res.status(201).json(decryptComment(comment));
   } catch (error) {
     reportError(error, { productId, userId });
     console.error("Error creating comment:", error);
@@ -228,7 +263,7 @@ router.get("/:productId", requireSession, passUserAuth, async (req, res) => {
     const totalPages = Math.ceil(totalCount / limit);
 
     results = {
-      comments,
+      comments: comments.map(decryptComment),
       page,
       limit,
       count: totalCount,
@@ -299,12 +334,12 @@ router.put("/:productId", requireAuth, passUserAuth, async (req, res) => {
     evt.fire(
       Evts.PRODUCT_COMMENT_UPDATED,
       new CommentEvent({
-        comment: updatedComment,
+        comment: decryptComment(updatedComment),
         type: Evts.PRODUCT_COMMENT_UPDATED,
       }),
     );
 
-    return res.json(updatedComment);
+    return res.json(decryptComment(updatedComment));
   } catch (error) {
     reportError(error, { productId, userId });
     console.error("Error updating comment:", error);

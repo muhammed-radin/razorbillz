@@ -4,7 +4,13 @@ import { mongodbAdapter } from "better-auth/adapters/mongodb";
 import { admin, anonymous } from "better-auth/plugins";
 import { UserModel } from "../models/schema/user.js";
 import { createAuthMiddleware, getSessionFromCtx } from "better-auth/api";
-import { decrypt, decryptStrict, encrypt } from "./crypt.js";
+import {
+  decrypt,
+  decryptStrict,
+  decryptField,
+  encrypt,
+  isEncrypted,
+} from "./crypto/index.js";
 import mongoose, { Mongoose } from "mongoose";
 import {
   ErrorEvent,
@@ -23,6 +29,10 @@ import sendEmail from "./mailer.js";
 import storeConfig from "../shared/store.config.js";
 import { stripServerOwnedFields } from "./schemaMapper.js";
 import { db } from "./db.js";
+import {
+  buildMirrorUserFields,
+  emailVaultAdapter,
+} from "./crypto/emailVault.js";
 
 let authInstance = null;
 
@@ -55,9 +65,16 @@ export default function createAuth(db) {
   }
 
   authInstance = betterAuth({
-    database: mongodbAdapter(
+    /* Email vaulting adapter: `users_validation.email` and
+     * `verification.identifier` are sealed at rest (envelope AES-GCM)
+     * and equality/prefix/substring searches translate to blind-index
+     * tokens (see utils/crypto/emailVault.js). Sign-in, verification
+     * links and password resets keep working on ciphertext. */
+    database: emailVaultAdapter(
       // Extract the raw MongoClient from your Mongoose connection pool
-      db,
+      mongodbAdapter(
+        db,
+      ),
     ),
     onAPIError: {
       onError: async (error, context) => {
@@ -108,6 +125,8 @@ export default function createAuth(db) {
                 isActive: true,
                 providedBy: userData.providedBy || "local",
                 preservedOldUserId: userData.preservedOldUserId || null,
+                /* Sealed email + blind-index tokens (email vaulting) */
+                ...buildMirrorUserFields(userData),
               });
 
               await applyBasicBetterAuthDataToUser(
@@ -151,11 +170,26 @@ export default function createAuth(db) {
         },
         update: {
           after: async (userData, context) => {
+            /* Mirror stays queryable on ciphertext: vaulted values +
+             * blind-index tokens are built from the (possibly sealed)
+             * Better Auth row (email vaulting). */
+            const mirrorFields = buildMirrorUserFields(userData);
             const safeFields = stripServerOwnedFields(userData);
-            if (Object.keys(safeFields).length > 0) {
+            // Vault-owned keys must not be copied verbatim from the
+            // Better Auth row (their tokens differ per collection).
+            for (const key of [
+              "email", "email_idx", "email_prefix", "email_grams",
+              "name", "name_idx", "name_prefix", "name_grams",
+              "phoneNumber", "phone_idx", "phone_prefix", "phone_grams",
+              "image", "profilePicture",
+            ]) {
+              delete safeFields[key];
+            }
+            const updates = { ...safeFields, ...mirrorFields };
+            if (Object.keys(updates).length > 0) {
               await UserModel.updateOne(
                 { id: userData.id },
-                { $set: safeFields },
+                { $set: updates },
               );
             }
             evt.fire(
@@ -226,7 +260,10 @@ export default function createAuth(db) {
         if (ctx.path === "/sign-in/email" || ctx.path === "/sign-up/email") {
           if (ctx.body && typeof ctx.body.password === "string") {
             try {
-              // 2. Decrypt client-encrypted password back to plain text
+              // 2. Decrypt client-obfuscated password back to plain text.
+              // Supports the envelope format ("ze1.…" — Tier A) and the
+              // legacy CryptoJS format shared with the current frontend;
+              // both are obfuscation-in-transit only, real protection is TLS.
               const plainPassword = decryptStrict(ctx.body.password);
 
               // 3. Mutate request body before Better Auth validates or hashes
@@ -271,7 +308,41 @@ export default function createAuth(db) {
         }
       }),
       after: createAuthMiddleware(async (ctx) => {
-        // Null
+        /* EMAIL VAULTING — Better Auth rows carry sealed values; any
+         * response that surfaces a user decrypts PII so the client
+         * never sees ciphertext. */
+        try {
+          const returned = ctx?.context?.returned;
+          const user = returned?.user ?? (returned && returned.email && returned.name ? returned : null);
+          if (user && typeof user === "object") {
+            if (typeof user.email === "string") {
+              const plain = decryptField(user.email);
+              if (typeof plain === "string" && plain && plain.includes("@")) {
+                user.email = plain;
+              }
+            }
+            if (typeof user.name === "string") {
+              const plain = decryptField(user.name);
+              if (typeof plain === "string" && plain) {
+                user.name = plain;
+              }
+            }
+            if (typeof user.image === "string" && isEncrypted(user.image)) {
+              const plain = decryptField(user.image);
+              if (typeof plain === "string" && plain) {
+                user.image = plain;
+              }
+            }
+            if (typeof user.profilePicture === "string" && isEncrypted(user.profilePicture)) {
+              const plain = decryptField(user.profilePicture);
+              if (typeof plain === "string" && plain) {
+                user.profilePicture = plain;
+              }
+            }
+          }
+        } catch (err) {
+          console.warn("[auth] response PII decrypt skipped:", err?.message);
+        }
       }),
     },
     emailVerification: {

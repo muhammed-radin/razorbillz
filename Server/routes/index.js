@@ -13,6 +13,7 @@ import jobsRouter from "./jobs.js";
 import paymentsRouter from "./payments.js";
 import shipmentsRouter from "./shipments.js";
 import supportRouter from "./support.js";
+import e2eeRouter from "./e2ee.js";
 import { devMiddleware } from "../utils/middlewares/dev.js";
 import { evt } from "../utils/events.manage.js";
 import logsRouter from "./logs.js";
@@ -60,6 +61,9 @@ router.use("/shipments", shipmentsRouter);
 
 /* Customer care tickets (auth + ownership enforced per route) */
 router.use("/support", supportRouter);
+
+/* E2EE keybags + client-encrypted vault (Tier B) */
+router.use("/e2ee", e2eeRouter);
 
 /* Comment routes */
 router.use("/comments", requireAuth, commentsRouter);
