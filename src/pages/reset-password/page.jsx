@@ -6,7 +6,6 @@ import { z } from "zod";
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import {
-  ArrowLeft,
   ArrowRight,
   CheckCircle2,
   Eye,
@@ -14,6 +13,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  LogIn,
   Mail,
   RefreshCw,
   RotateCcw,
@@ -42,7 +42,7 @@ import { origin } from "@shared/utils/route-util";
 const ResetPasswordPage = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
 
   // ── Extract Token from URL (handles HashRouter query & root URL query) ──
   const initialToken = useMemo(() => {
@@ -54,6 +54,17 @@ const ResetPasswordPage = () => {
     }
     return "";
   }, [searchParams]);
+
+  // Better Auth redirects expired/invalid links back with ?error=INVALID_TOKEN.
+  const urlError = useMemo(() => {
+    const fromParams = searchParams.get("error");
+    if (fromParams) return fromParams;
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("error") || "";
+    }
+    return "";
+  }, [searchParams]);
+  const urlErrorShown = useRef(false);
 
   // Mode: "reset" (set new password with token) or "forgot" (request reset email)
   const [mode, setMode] = useState(initialToken ? "reset" : "forgot");
@@ -75,6 +86,20 @@ const ResetPasswordPage = () => {
       setMode("reset");
     }
   }, [initialToken]);
+
+  // A token that expired before the user clicked the link must land on
+  // the request form with a clear explanation instead of a dead form.
+  useEffect(() => {
+    if (!urlError || urlErrorShown.current) return;
+    urlErrorShown.current = true;
+    setMode("forgot");
+    toast.error(
+      t("auth.resetLinkInvalid", {
+        defaultValue:
+          "This reset link is invalid or has expired. Request a new one below.",
+      }),
+    );
+  }, [urlError, t]);
 
   // Resend cooldown timer
   useEffect(() => {

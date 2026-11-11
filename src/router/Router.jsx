@@ -157,6 +157,10 @@ const router = createHashRouter([
                 ...lazyRoute(() => import("@/pages/Admin/analytics")),
               },
               {
+                path: "live-events",
+                ...lazyRoute(() => import("@/pages/Admin/live-events")),
+              },
+              {
                 path: "payments",
                 ...lazyRoute(() => import("@/pages/Admin/payments")),
               },

@@ -184,6 +184,16 @@ export const analyticsApi = {
   ordersSummary: (params) => get("/api/analytics/orders-summary", { params }),
 };
 
+/** Owner-only live telemetry. The stream itself uses useLiveEventsStream. */
+export const liveEventsApi = {
+  snapshot: (params, config) =>
+    get("/api/live-events/snapshot", { ...config, params }),
+  past: (params, config) =>
+    get("/api/live-events/past", { ...config, params }),
+  pastSummary: (params, config) =>
+    get("/api/live-events/past/summary", { ...config, params }),
+};
+
 export const paymentsApi = {
   config: () => get("/api/payments/config"),
   createRazorpay: (payload) =>

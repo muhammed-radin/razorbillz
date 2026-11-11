@@ -24,6 +24,7 @@ import {
   errorHandler,
 } from "./utils/middlewares/errorHandler.js";
 import { evt } from "./utils/events.manage.js";
+import { telemetryRequestMiddleware } from "./utils/liveEvents.js";
 import tallyDebug from "./utils/debug.js";
 import { initJobs } from "./utils/jobs.js";
 import { storeConfig } from "./shared/store.config.js";
@@ -118,6 +119,7 @@ app.all("/api/auth/*splat", checkDatabaseConnection, initAuth);
 app.use(globalApiLimiter);
 app.use(logger("dev"));
 app.use(requestId);
+app.use(telemetryRequestMiddleware);
 // Preserve raw body for HMAC webhook verification (Razorpay/Shipmozo).
 // Handlers read req.rawBody when present, falling back to parsed JSON.
 app.use(

@@ -244,6 +244,7 @@
     "backToLogin": "Back to Login",
     "tryDifferentEmail": "Try another email",
     "forgotPasswordError": "Failed to send reset link. Please try again.",
+    "resetLinkInvalid": "This reset link is invalid or has expired. Request a new one below.",
     "emailRequired": "Email is required",
     "newPassword": "New Password",
     "newPasswordPlaceholder": "Enter new password",
