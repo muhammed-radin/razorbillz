@@ -4,18 +4,18 @@ import { authClient } from "@/lib/auth-client";
 
 const apiBase = import.meta.env.VITE_API_ENDPOINT;
 const ACTION_HEADER = {
-  "server-api-key": import.meta.env.VITE_SERVER_API_KEY,
-  "actions-api-key": import.meta.env.VITE_ACTION_ACESS_TOKEN,
+  "server-api-key": import.meta.env.VITE_SERVER_API_KEY || "",
+  "actions-api-key": import.meta.env.VITE_ACTION_ACESS_TOKEN || "",
 };
 
 const API_KEY_HEADER = {
-  "server-api-key": import.meta.env.VITE_SERVER_API_KEY,
+  "server-api-key": import.meta.env.VITE_SERVER_API_KEY || "",
 };
 
 axios.defaults.headers.common["server-api-key"] =
-  import.meta.env.VITE_SERVER_API_KEY;
+  import.meta.env.VITE_SERVER_API_KEY || "";
 axios.defaults.headers.common["actions-api-key"] =
-  import.meta.env.VITE_ACTION_ACESS_TOKEN;
+  import.meta.env.VITE_ACTION_ACESS_TOKEN || "";
 
 const api = {
   API_KEY_HEADER,

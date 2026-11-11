@@ -334,7 +334,7 @@ const LoginPage = () => {
                       {t("auth.password", { defaultValue: "Password" })}
                     </FormLabel>
                     <Link
-                      to="/reset-password"
+                      to="/forgot-password"
                       className="text-[11px] sm:text-xs text-primary hover:underline underline-offset-4 font-medium transition-colors"
                       tabIndex={isSubmitting ? -1 : 0}
                     >

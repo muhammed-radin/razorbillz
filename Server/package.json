@@ -8,6 +8,7 @@
     "dev": "NODE_ENV=development nodemon app.js",
     "devwin": "set NODE_ENV=development && nodemon app.js",
     "test": "node --test \"tests/*.test.js\"",
+    "db:drop-collections": "node scripts/drop-all-collections.js",
     "keys:generate": "node scripts/generate-master-keys.js",
     "keys:rotate": "node scripts/generate-master-keys.js --rotate",
     "migrate:encryption": "node scripts/migrate-encryption.js",

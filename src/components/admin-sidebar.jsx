@@ -11,6 +11,7 @@ import {
   ChevronRight,
   LifeBuoy,
   CreditCard,
+  Radio,
 } from "lucide-react";
 
 import {
@@ -77,6 +78,12 @@ const navItems = {
         url: "/auth/admin/support",
         icon: LifeBuoy,
       },
+      {
+        title: "Live Events",
+        url: "/auth/admin/live-events",
+        icon: Radio,
+        ownerOnly: true,
+      },
     ],
   },
   quick: {
@@ -113,6 +120,7 @@ export function AdminSidebar({
   const { data: session } = useUserSession();
   const adminName = session?.user?.name ?? "Admin User";
   const adminEmail = session?.user?.email ?? store.emailSupport;
+  const isOwner = session?.user?.role === "owner";
 
   // Update page info when location changes
   useEffect(() => {
@@ -147,20 +155,22 @@ export function AdminSidebar({
               <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {group.items.map((item) => {
-                    const isActive = location.pathname === item.url;
+                  {group.items
+                    .filter((item) => !item.ownerOnly || isOwner)
+                    .map((item) => {
+                      const isActive = location.pathname === item.url;
 
-                    return (
-                      <SidebarMenuItem key={item.title}>
-                        <SidebarMenuButton asChild isActive={isActive}>
-                          <Link to={item.url}>
-                            <item.icon className="h-4 w-4" />
-                            <span>{item.title}</span>
-                          </Link>
-                        </SidebarMenuButton>
-                      </SidebarMenuItem>
-                    );
-                  })}
+                      return (
+                        <SidebarMenuItem key={item.title}>
+                          <SidebarMenuButton asChild isActive={isActive}>
+                            <Link to={item.url}>
+                              <item.icon className="h-4 w-4" />
+                              <span>{item.title}</span>
+                            </Link>
+                          </SidebarMenuButton>
+                        </SidebarMenuItem>
+                      );
+                    })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>

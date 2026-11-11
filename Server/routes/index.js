@@ -18,6 +18,7 @@ import { devMiddleware } from "../utils/middlewares/dev.js";
 import { evt } from "../utils/events.manage.js";
 import logsRouter from "./logs.js";
 import analyticsRouter from "./analytics.js";
+import liveEventsRouter from "./liveEvents.js";
 import storeRouter from "./store.js";
 import sendEmail from "../utils/mailer.js";
 import { generateHashLink, origin } from "../shared/utils/route-util.js";
@@ -76,6 +77,11 @@ router.use("/logs", requireAuth, logsRouter);
 
 /* Analytics routes */
 router.use("/analytics", requireAuth, analyticsRouter);
+
+/* Owner-only live telemetry (JSON snapshots + server-sent events). The
+ * router enforces its own auth/permission chain so every path — including
+ * the long-lived stream — is gated by the same owner check. */
+router.use("/live-events", liveEventsRouter);
 
 /* Redirect to front-end */
 router.get("/redirect-app/verify-email", (req, res) => {

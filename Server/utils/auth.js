@@ -462,6 +462,17 @@ export default function createAuth(db) {
       accountLinking: {
         updateUserInfoOnLink: true, // Update user info when linking accounts
       },
+      /* OAuth state is persisted in the `verification` collection
+       * (database strategy) and validated server-side: parseState
+       * requires the row's `oauthState` to equal the URL state. The
+       * ADDITIONAL signed `state` cookie check is what broke Google
+       * sign-in ("State mismatch: State not persisted correctly",
+       * state_security_mismatch) — with the frontend and API on
+       * different domains the browser doesn't reliably replay that
+       * cookie on the Google→API callback redirect. The cookie is a
+       * redundant second layer in the database strategy, so skip it;
+       * CSRF protection via the DB row comparison is untouched. */
+      skipStateCookieCheck: true,
     },
     socialProviders: {
       google: {
