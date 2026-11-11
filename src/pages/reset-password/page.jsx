@@ -240,7 +240,7 @@ const ResetPasswordPage = () => {
       toast.promise(
         async () => {
           const redirectTo = origin().path("/reset-password").hashPathURL();
-          const { error } = await authClient.forgotPassword({
+          const { error } = await authClient.requestPasswordReset({
             email,
             redirectTo,
           });
@@ -330,7 +330,7 @@ const ResetPasswordPage = () => {
     setIsSubmitting(true);
     try {
       const redirectTo = origin().path("/reset-password").hashPathURL();
-      const { error } = await authClient.forgotPassword({
+      const { error } = await authClient.requestPasswordReset({
         email: emailSentTo,
         redirectTo,
       });

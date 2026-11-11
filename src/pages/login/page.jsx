@@ -33,7 +33,6 @@ import GoogleLogo from "@/components/auth/google-logo";
 import AuthLayout from "@/components/auth/auth-layout";
 import { api } from "@/utils/api";
 import { alert } from "@/components/dialog-alert-provider";
-import { origin } from "@shared/utils/route-util";
 
 const LoginPage = () => {
   const { t } = useTranslation();
@@ -42,8 +41,6 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [formShake, setFormShake] = useState(false);
   const [rememberMe, setRememberMe] = useState(true);
-
-  const [isMailSent, setIsMailSent] = useState(false); // State to track if the verification email has been sent
 
   // ── Memoized Zod Schema ──
   const formSchema = useMemo(
@@ -85,34 +82,6 @@ const LoginPage = () => {
           const email = form.getValues("email");
           if (email) {
             await resendVerification(email);
-            setIsMailSent(true); // Update state to indicate that the email has been sent
-          }
-        }
-      },
-    });
-  };
-
-  const openFrogetPasswordAlert = function () {
-    alert.info({
-      title: t("auth.forgotPasswordAlertTitle", "Forgot Password"),
-      description: t(
-        "auth.forgotPasswordAlertDescription",
-        "If you've forgotten your password, you can reset it by clicking the button below. A password reset link will be sent to your registered email address.",
-      ),
-      buttonText: t("auth.resetPassword", "Reset Password"),
-      onClose: async (confirmed) => {
-        if (confirmed) {
-          const email = form.getValues("email");
-          if (email) {
-            await authClient.forgotPassword({
-              email,
-              redirectTo: origin().path("/reset-password").hashPathURL(),
-            });
-            toast.success(
-              t("auth.passwordResetEmailSent", {
-                defaultValue: "Password reset email sent successfully.",
-              }),
-            );
           }
         }
       },

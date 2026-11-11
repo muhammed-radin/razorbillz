@@ -39,7 +39,6 @@ import {
   ChartTooltipContent,
 } from "@/components/ui/chart";
 import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -152,25 +151,27 @@ function StatCard({ title, value, hint, icon, tone }) {
   const Icon = icon;
 
   return (
-    <Card>
-      <CardContent className="p-4 sm:p-5">
-        <div className="flex items-center gap-3">
+    <Card className="min-w-0">
+      <CardContent className="p-3 sm:p-5">
+        <div className="flex items-center gap-2 sm:gap-3">
           <div
-            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-lg ${tone}`}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg sm:h-10 sm:w-10 ${tone}`}
           >
-            <Icon className="h-5 w-5" />
+            <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs text-muted-foreground sm:text-sm">
+            <p className="truncate text-[11px] text-muted-foreground sm:text-sm">
               {title}
             </p>
-            <p className="truncate text-lg font-bold tabular-nums sm:text-2xl">
+            <p className="truncate text-base font-bold tabular-nums sm:text-2xl">
               {value}
             </p>
           </div>
         </div>
         {hint ? (
-          <p className="mt-2 text-[11px] text-muted-foreground">{hint}</p>
+          <p className="mt-2 break-words text-[11px] leading-snug text-muted-foreground">
+            {hint}
+          </p>
         ) : null}
       </CardContent>
     </Card>
@@ -301,13 +302,13 @@ function EmptyRow({ colSpan, label = "No records yet." }) {
 
 function LiveEventsTable({ events }) {
   return (
-    <Table>
+    <Table className="min-w-[300px] sm:min-w-[520px]">
       <TableHeader>
         <TableRow>
           <TableHead>Time</TableHead>
           <TableHead>Type</TableHead>
-          <TableHead>Sector</TableHead>
-          <TableHead>Level</TableHead>
+          <TableHead className="hidden sm:table-cell">Sector</TableHead>
+          <TableHead className="hidden sm:table-cell">Level</TableHead>
           <TableHead>Detail</TableHead>
         </TableRow>
       </TableHeader>
@@ -321,12 +322,12 @@ function LiveEventsTable({ events }) {
               <TableCell>
                 <span className="font-mono text-xs">{event.type || "—"}</span>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 <Badge variant="secondary" className="capitalize">
                   {event.sector || "global"}
                 </Badge>
               </TableCell>
-              <TableCell>
+              <TableCell className="hidden sm:table-cell">
                 {event.isError ? (
                   <Badge variant="destructive">error</Badge>
                 ) : event.isMajor ? (
@@ -335,7 +336,7 @@ function LiveEventsTable({ events }) {
                   <Badge variant="outline">info</Badge>
                 )}
               </TableCell>
-              <TableCell className="max-w-[360px] truncate text-xs text-muted-foreground">
+              <TableCell className="max-w-[160px] truncate text-xs text-muted-foreground sm:max-w-[360px]">
                 {event.title || event.message || event.path || "—"}
               </TableCell>
             </TableRow>
@@ -350,14 +351,16 @@ function LiveEventsTable({ events }) {
 
 function RequestsTable({ requests }) {
   return (
-    <Table>
+    <Table className="min-w-[300px] sm:min-w-[420px]">
       <TableHeader>
         <TableRow>
           <TableHead>Time</TableHead>
           <TableHead>Method</TableHead>
           <TableHead>Path</TableHead>
           <TableHead>Status</TableHead>
-          <TableHead className="text-right">Latency</TableHead>
+          <TableHead className="hidden text-right sm:table-cell">
+            Latency
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -370,13 +373,13 @@ function RequestsTable({ requests }) {
               <TableCell>
                 <MethodBadge method={request.method} />
               </TableCell>
-              <TableCell className="max-w-[260px] truncate font-mono text-xs">
+              <TableCell className="max-w-[130px] truncate font-mono text-xs sm:max-w-[260px]">
                 {request.path}
               </TableCell>
               <TableCell>
                 <StatusBadge status={request.status} level={request.level} />
               </TableCell>
-              <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+              <TableCell className="hidden text-right text-xs tabular-nums text-muted-foreground sm:table-cell">
                 {request.durationMs}ms
               </TableCell>
             </TableRow>
@@ -391,7 +394,7 @@ function RequestsTable({ requests }) {
 
 function DbStreamTable({ operations }) {
   return (
-    <Table>
+    <Table className="min-w-[280px] sm:min-w-[320px]">
       <TableHeader>
         <TableRow>
           <TableHead>Time</TableHead>
@@ -409,7 +412,7 @@ function DbStreamTable({ operations }) {
               <TableCell>
                 <OperationBadge operation={operation.operation} />
               </TableCell>
-              <TableCell className="font-mono text-xs">
+              <TableCell className="max-w-[180px] truncate font-mono text-xs">
                 {operation.collection}
               </TableCell>
             </TableRow>
@@ -424,14 +427,16 @@ function DbStreamTable({ operations }) {
 
 function TopRoutesTable({ routes }) {
   return (
-    <Table>
+    <Table className="min-w-[280px] sm:min-w-[360px]">
       <TableHeader>
         <TableRow>
           <TableHead>Method</TableHead>
           <TableHead>Route</TableHead>
           <TableHead className="text-right">Calls</TableHead>
-          <TableHead className="text-right">Avg</TableHead>
-          <TableHead className="text-right">Errors</TableHead>
+          <TableHead className="hidden text-right sm:table-cell">Avg</TableHead>
+          <TableHead className="hidden text-right sm:table-cell">
+            Errors
+          </TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -441,16 +446,16 @@ function TopRoutesTable({ routes }) {
               <TableCell>
                 <MethodBadge method={route.method} />
               </TableCell>
-              <TableCell className="max-w-[260px] truncate font-mono text-xs">
+              <TableCell className="max-w-[160px] truncate font-mono text-xs sm:max-w-[260px]">
                 {route.path}
               </TableCell>
               <TableCell className="text-right text-xs tabular-nums">
                 {formatNumber(route.count)}
               </TableCell>
-              <TableCell className="text-right text-xs tabular-nums text-muted-foreground">
+              <TableCell className="hidden text-right text-xs tabular-nums text-muted-foreground sm:table-cell">
                 {route.avgMs}ms
               </TableCell>
-              <TableCell className="text-right text-xs tabular-nums">
+              <TableCell className="hidden text-right text-xs tabular-nums sm:table-cell">
                 {route.errors ? (
                   <span className="text-destructive">{route.errors}</span>
                 ) : (
@@ -469,7 +474,7 @@ function TopRoutesTable({ routes }) {
 
 function CollectionsTable({ collections }) {
   return (
-    <Table>
+    <Table className="min-w-[300px] sm:min-w-[340px]">
       <TableHeader>
         <TableRow>
           <TableHead>Collection</TableHead>
@@ -484,7 +489,7 @@ function CollectionsTable({ collections }) {
         {collections.length ? (
           collections.slice(0, 12).map((row) => (
             <TableRow key={row.collection}>
-              <TableCell className="max-w-[180px] truncate font-mono text-xs">
+              <TableCell className="max-w-[130px] truncate font-mono text-xs sm:max-w-[180px]">
                 {row.collection}
               </TableCell>
               <TableCell className="text-right text-xs tabular-nums">
@@ -769,21 +774,21 @@ function LiveEventsDashboard() {
   const eventSeries = snapshot?.events ?? {};
 
   return (
-    <div className="space-y-4 p-4 sm:space-y-6 sm:p-6">
-      <div className="mx-auto w-full max-w-7xl space-y-4 sm:space-y-6">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+    <div className="w-full min-w-0 space-y-4 p-4 sm:space-y-6 sm:p-6">
+      <div className="mx-auto w-full min-w-0 max-w-7xl space-y-4 sm:space-y-6">
+        <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0">
             <h1 className="flex items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl">
-              <Radio className="h-5 w-5 text-primary" />
+              <Radio className="h-5 w-5 shrink-0 text-primary" />
               Live Events
             </h1>
-            <p className="mt-0.5 text-xs text-muted-foreground sm:text-sm">
+            <p className="mt-0.5 max-w-prose text-xs text-muted-foreground sm:text-sm">
               Owner-only realtime telemetry, API tallies, and MongoDB CRUD
               activity.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
             <ConnectionPill
               status={stream.status}
               attempts={stream.attempts}
@@ -815,7 +820,7 @@ function LiveEventsDashboard() {
           </div>
         ) : null}
 
-        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
+        <div className="grid grid-cols-1 gap-3 min-[400px]:grid-cols-2 sm:gap-4 lg:grid-cols-4">
           <StatCard
             title="API requests"
             value={formatCompact(requestSeries.total)}
@@ -847,7 +852,7 @@ function LiveEventsDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList>
+          <TabsList className="grid w-full grid-cols-2 sm:inline-flex sm:w-auto">
             <TabsTrigger value="live">
               <Radio className="mr-1.5 h-3.5 w-3.5" />
               Live
@@ -859,9 +864,9 @@ function LiveEventsDashboard() {
           </TabsList>
 
           <TabsContent value="live" className="space-y-4 sm:space-y-6">
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
               <Card className="lg:col-span-2">
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>Traffic per minute</CardTitle>
                   <CardDescription>
                     API requests and application events over the last 60
@@ -871,7 +876,7 @@ function LiveEventsDashboard() {
                 <CardContent>
                   <ChartContainer
                     config={chartConfig}
-                    className="h-[260px] w-full"
+                    className="h-[220px] w-full min-w-0 sm:h-[260px]"
                   >
                     <AreaChart
                       data={series}
@@ -953,7 +958,7 @@ function LiveEventsDashboard() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>MongoDB CRUD</CardTitle>
                   <CardDescription>
                     Driver commands grouped by operation.
@@ -962,7 +967,7 @@ function LiveEventsDashboard() {
                 <CardContent>
                   <ChartContainer
                     config={chartConfig}
-                    className="h-[260px] w-full"
+                    className="h-[220px] w-full min-w-0 sm:h-[260px]"
                   >
                     <BarChart
                       data={series}
@@ -1006,9 +1011,9 @@ function LiveEventsDashboard() {
               </Card>
             </div>
 
-            <div className="grid gap-4 lg:grid-cols-5">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-5 [&>*]:min-w-0">
               <Card className="lg:col-span-3">
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>API request tally</CardTitle>
                   <CardDescription>
                     Hottest routes since the server started. Query strings and
@@ -1016,31 +1021,31 @@ function LiveEventsDashboard() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <ScrollArea className="h-[320px]">
+                  <div className="max-h-[320px] w-full overflow-auto overscroll-contain">
                     <TopRoutesTable routes={requestSeries.topRoutes ?? []} />
-                  </ScrollArea>
+                  </div>
                 </CardContent>
               </Card>
 
               <Card className="lg:col-span-2">
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>CRUD by collection</CardTitle>
                   <CardDescription>
                     Total {formatNumber(dbSeries.total)} database commands.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <ScrollArea className="h-[320px]">
+                  <div className="max-h-[320px] w-full overflow-auto overscroll-contain">
                     <CollectionsTable
                       collections={dbSeries.byCollection ?? []}
                     />
-                  </ScrollArea>
+                  </div>
                 </CardContent>
               </Card>
             </div>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Live event feed</CardTitle>
                 <CardDescription>
                   {formatNumber(eventSeries.total)} events captured · newest
@@ -1048,15 +1053,15 @@ function LiveEventsDashboard() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="p-0">
-                <ScrollArea className="h-[380px]">
+                <div className="max-h-[380px] w-full overflow-auto overscroll-contain">
                   <LiveEventsTable events={liveEvents.slice(0, 100)} />
-                </ScrollArea>
+                </div>
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-2 [&>*]:min-w-0">
               <Card>
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>API request stream</CardTitle>
                   <CardDescription>
                     {formatNumber(requestSeries.total)} requests ·{" "}
@@ -1064,23 +1069,23 @@ function LiveEventsDashboard() {
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <ScrollArea className="h-[320px]">
+                  <div className="max-h-[320px] w-full overflow-auto overscroll-contain">
                     <RequestsTable requests={liveRequests.slice(0, 100)} />
-                  </ScrollArea>
+                  </div>
                 </CardContent>
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>MongoDB CRUD stream</CardTitle>
                   <CardDescription>
                     Live insert, find, update, and delete commands.
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="p-0">
-                  <ScrollArea className="h-[320px]">
+                  <div className="max-h-[320px] w-full overflow-auto overscroll-contain">
                     <DbStreamTable operations={liveDbOps.slice(0, 100)} />
-                  </ScrollArea>
+                  </div>
                 </CardContent>
               </Card>
             </div>
@@ -1088,7 +1093,7 @@ function LiveEventsDashboard() {
 
           <TabsContent value="past" className="space-y-4 sm:space-y-6">
             <Card>
-              <CardHeader>
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Past activity</CardTitle>
                 <CardDescription>
                   Persisted records from the activities collection, with the
@@ -1194,16 +1199,16 @@ function LiveEventsDashboard() {
                   >
                     Clear
                   </Button>
-                  <span className="ml-auto text-xs text-muted-foreground">
+                  <span className="w-full text-xs text-muted-foreground sm:ml-auto sm:w-auto">
                     {formatNumber(past.total)} matching records
                   </span>
                 </div>
               </CardContent>
             </Card>
 
-            <div className="grid gap-4 lg:grid-cols-3">
+            <div className="grid min-w-0 gap-4 lg:grid-cols-3 [&>*]:min-w-0">
               <Card className="lg:col-span-2">
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>Past activity per day</CardTitle>
                   <CardDescription>
                     Last 14 days from persisted activity records.
@@ -1212,7 +1217,7 @@ function LiveEventsDashboard() {
                 <CardContent>
                   <ChartContainer
                     config={chartConfig}
-                    className="h-[240px] w-full"
+                    className="h-[200px] w-full min-w-0 sm:h-[240px]"
                   >
                     <BarChart
                       data={pastSeries}
@@ -1251,7 +1256,7 @@ function LiveEventsDashboard() {
               </Card>
 
               <Card>
-                <CardHeader>
+                <CardHeader className="px-4 sm:px-6">
                   <CardTitle>Breakdown</CardTitle>
                   <CardDescription>
                     {formatNumber(pastSummary?.total)} records in the window.
@@ -1305,7 +1310,7 @@ function LiveEventsDashboard() {
             </div>
 
             <Card>
-              <CardHeader>
+              <CardHeader className="px-4 sm:px-6">
                 <CardTitle>Persisted events</CardTitle>
                 <CardDescription>
                   {formatNumber(past.total)} records · showing{" "}
@@ -1319,14 +1324,18 @@ function LiveEventsDashboard() {
                   </div>
                 ) : null}
 
-                <ScrollArea className="h-[420px]">
-                  <Table>
+                <div className="max-h-[420px] w-full overflow-auto overscroll-contain">
+                  <Table className="min-w-[300px] sm:min-w-[520px]">
                     <TableHeader>
                       <TableRow>
                         <TableHead>Time</TableHead>
                         <TableHead>Type</TableHead>
-                        <TableHead>Sector</TableHead>
-                        <TableHead>Level</TableHead>
+                        <TableHead className="hidden sm:table-cell">
+                          Sector
+                        </TableHead>
+                        <TableHead className="hidden sm:table-cell">
+                          Level
+                        </TableHead>
                         <TableHead>Detail</TableHead>
                       </TableRow>
                     </TableHeader>
@@ -1342,7 +1351,7 @@ function LiveEventsDashboard() {
                                 {event.type || "—"}
                               </span>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="hidden sm:table-cell">
                               <Badge
                                 variant="secondary"
                                 className="capitalize"
@@ -1350,7 +1359,7 @@ function LiveEventsDashboard() {
                                 {event.sector || "global"}
                               </Badge>
                             </TableCell>
-                            <TableCell>
+                            <TableCell className="hidden sm:table-cell">
                               {event.isError ? (
                                 <Badge variant="destructive">error</Badge>
                               ) : event.isMajor ? (
@@ -1359,7 +1368,7 @@ function LiveEventsDashboard() {
                                 <Badge variant="outline">info</Badge>
                               )}
                             </TableCell>
-                            <TableCell className="max-w-[420px] truncate text-xs text-muted-foreground">
+                            <TableCell className="max-w-[180px] truncate text-xs text-muted-foreground sm:max-w-[420px]">
                               {event.title ||
                                 event.message ||
                                 event.path ||
@@ -1379,7 +1388,7 @@ function LiveEventsDashboard() {
                       )}
                     </TableBody>
                   </Table>
-                </ScrollArea>
+                </div>
 
                 <div className="flex items-center justify-between gap-3 border-t p-3">
                   <span className="text-xs text-muted-foreground">
