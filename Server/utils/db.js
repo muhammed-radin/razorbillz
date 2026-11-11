@@ -2,6 +2,7 @@ import "dotenv/config";
 import mongoose from "mongoose";
 
 import { dbEventNames, dbEvents } from "./events.manage.js";
+import { attachDatabaseMonitoring } from "./liveEvents.js";
 import { initAgenda } from "./agenda.js";
 import storeConfig from "../shared/store.config.js";
 
@@ -24,10 +25,14 @@ async function openConnection() {
   }
 
   // Mongoose manages the MongoDB connection.
-  await mongoose.connect(uri);
+  await mongoose.connect(uri, {
+    // Driver command monitoring powers the owner-only CRUD telemetry.
+    monitorCommands: true,
+  });
 
   // Reuse Mongoose's underlying native MongoDB client.
   mongoClient = mongoose.connection.getClient();
+  attachDatabaseMonitoring(mongoose.connection);
 
   const database = mongoose.connection.db;
 

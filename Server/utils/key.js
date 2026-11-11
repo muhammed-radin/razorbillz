@@ -1,4 +1,5 @@
 // validate keys with env vars
+//  Currently not used this file, deprecated in favor of Server/utils/env.js
 export function validateApiKeys(req, res, next) {
   if (process.env.NODE_ENV === "development") {
     next();
