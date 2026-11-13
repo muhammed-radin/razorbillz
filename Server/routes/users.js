@@ -11,6 +11,8 @@ import settingsRouter from "./settings.js";
 import {
   encrypt,
   decryptField,
+  decryptAddress,
+  decryptAddressBook,
   isEncrypted,
   advancedPIIIdx,
   searchTokens,
@@ -18,6 +20,20 @@ import {
 import { isAPIError } from "better-auth/api";
 
 const router = express.Router();
+
+/* Address snapshots (users.address + users.addressBook[]) are sealed
+ * at rest (envelope AES-GCM, server-only key). Decrypt-on-read at
+ * every endpoint that returns them — the browser cannot open `ze1…`
+ * envelopes, and client-side legacy decrypt passes plaintext through. */
+function decryptUserAddresses(user) {
+  if (!user || typeof user !== "object") return user;
+  const out = { ...user };
+  if (out.address) out.address = decryptAddress(out.address);
+  if (Array.isArray(out.addressBook)) {
+    out.addressBook = decryptAddressBook(out.addressBook);
+  }
+  return out;
+}
 
 router.use("/settings", settingsRouter);
 
@@ -39,14 +55,14 @@ router.get("/profile", requireAuth, passUserAuth, async (req, res) => {
     /* PII is sealed at rest (envelope AES-GCM); decrypt-on-read so the
      * client never handles the storage format. Blind-index subdocs are
      * server-internal and stripped here. */
-    const decrypted = {
+    const decrypted = decryptUserAddresses({
       ...user,
       name: decryptField(user.name),
       email: decryptField(user.email),
       image: decryptField(user.image),
       profilePicture: decryptField(user.profilePicture),
       phoneNumber: decryptField(user.phoneNumber),
-    };
+    });
     delete decrypted.name_idx;
     delete decrypted.email_idx;
     delete decrypted.phone_idx;
@@ -207,14 +223,16 @@ router.get(
         // remove scattered-gram false positives (substring semantics).
         const needle = search.toLowerCase();
         let safeUsers = users
-          .map((u) => ({
-            ...u,
-            name: decryptField(u.name),
-            email: decryptField(u.email),
-            phoneNumber: decryptField(u.phoneNumber),
-            image: decryptField(u.image),
-            profilePicture: decryptField(u.profilePicture),
-          }))
+          .map((u) =>
+            decryptUserAddresses({
+              ...u,
+              name: decryptField(u.name),
+              email: decryptField(u.email),
+              phoneNumber: decryptField(u.phoneNumber),
+              image: decryptField(u.image),
+              profilePicture: decryptField(u.profilePicture),
+            }),
+          )
           .filter((u) => {
             if (!needsGramsFilter || !needle) return true;
             // Mirror the full query branch set (name/email/phone/id,
@@ -280,14 +298,14 @@ router.get(
     const userId = req.params.id;
     // Never expose sensitive internals (hashes, tokens, indexes).
     const propsToStrip = (u) => {
-      const clean = {
+      const clean = decryptUserAddresses({
         ...u,
         name: decryptField(u.name),
         email: decryptField(u.email),
         phoneNumber: decryptField(u.phoneNumber),
         image: decryptField(u.image),
         profilePicture: decryptField(u.profilePicture),
-      };
+      });
       for (const k of [
         "name_idx", "email_idx", "phone_idx",
         "name_prefix", "name_grams",

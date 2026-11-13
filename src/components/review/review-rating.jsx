@@ -30,8 +30,12 @@ import { decrypt } from "@/utils/crypt";
 const toReview = (comment, index) => ({
   id: comment._id ?? comment.id ?? `comment-${index}`,
   userId: comment.userId ?? "",
+  /* Server decrypts reviewer PII on read (Tier A); decrypt() here is a
+   * defensive passthrough that also opens legacy-sealed values from
+   * stale caches. Avatar must be decrypted too — sealed URLs break
+   * <img src> and fall back to initials. */
   userName: decrypt(comment.userName) ?? "Anonymous",
-  userAvatar: comment.userAvatar ?? "",
+  userAvatar: decrypt(comment.userAvatar) ?? "",
   rating: comment.rating ?? 5,
   date: comment.createdAt
     ? new Date(comment.createdAt).toISOString().split("T")[0]

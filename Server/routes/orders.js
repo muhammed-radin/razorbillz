@@ -372,7 +372,13 @@ router.get(
       const cached = !realtime && globalMemory?.getLocalMemory(req.url);
 
       if (cached) {
-        return res.json(cached);
+        /* Cache holds the SEALED payload (no plaintext in memory
+         * snapshots); Tier A decrypt-on-read happens at the response
+         * boundary so admin UI gets plaintext addresses. */
+        return res.json({
+          ...cached,
+          orders: (cached.orders ?? []).map(decryptOrderAddresses),
+        });
       }
 
       const page = parsePositiveInt(getRequestValue(req, "page"), 1);
@@ -499,7 +505,13 @@ router.get(
         60 * 2,
       );
 
-      return res.json(result);
+      /* Decrypt-on-read: shipping/billing snapshots are sealed at rest
+       * (envelope AES-GCM, server-only key). The admin listing needs
+       * plaintext client fields; the cache above stays sealed. */
+      return res.json({
+        ...result,
+        orders: result.orders.map(decryptOrderAddresses),
+      });
     } catch (err) {
       console.error("Error fetching orders:", err);
 
@@ -1876,9 +1888,11 @@ router.patch(
         trackingNumber: req.body?.trackingNumber,
       });
 
+      /* Decrypt-on-read: the admin client renders these fields
+       * directly — never hand back sealed envelopes. */
       return res.json({
         success: true,
-        order: updatedOrder,
+        order: decryptOrderAddresses(updatedOrder),
       });
     } catch (err) {
       console.error("Error updating shipping info:", err);
@@ -1977,7 +1991,10 @@ router.get(
         .sort({ createdAt: -1 })
         .limit(limit)
         .lean();
-      return res.json({ count: orders.length, orders });
+      return res.json({
+        count: orders.length,
+        orders: orders.map(decryptOrderAddresses),
+      });
     } catch (err) {
       console.error("Error fetching unverified orders:", err);
       return res.status(500).json({
@@ -1999,7 +2016,7 @@ router.get(
 
       return res.json({
         count: orders.length,
-        orders,
+        orders: orders.map(decryptOrderAddresses),
       });
     } catch (err) {
       console.error("Error fetching pending orders:", err);
@@ -2023,7 +2040,7 @@ router.get(
 
       return res.json({
         count: orders.length,
-        orders,
+        orders: orders.map(decryptOrderAddresses),
       });
     } catch (err) {
       console.error("Error fetching processing orders:", err);
@@ -2047,7 +2064,7 @@ router.get(
 
       return res.json({
         count: orders.length,
-        orders,
+        orders: orders.map(decryptOrderAddresses),
       });
     } catch (err) {
       console.error("Error fetching return requests:", err);
@@ -2071,7 +2088,7 @@ router.get(
 
       return res.json({
         count: orders.length,
-        orders,
+        orders: orders.map(decryptOrderAddresses),
       });
     } catch (err) {
       console.error("Error fetching pending refunds:", err);

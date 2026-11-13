@@ -534,12 +534,18 @@ export default function OrdersPage() {
         raw: updated?.order ?? updated ?? selectedOrder.raw,
         ...(serverShip
           ? {
+              /* Server returns the (Tier A) decrypted address object;
+               * decryptAddress passes plaintext through untouched and
+               * still opens any legacy-sealed field defensively. */
               shippingAddress:
                 typeof serverShip === "string"
                   ? serverShip
-                  : [serverShip.address, serverShip.city]
-                      .filter(Boolean)
-                      .join(", "),
+                  : (() => {
+                      const s = decryptAddress(serverShip);
+                      return [s.street ?? s.address, s.city]
+                        .filter(Boolean)
+                        .join(", ");
+                    })(),
             }
           : {}),
       };
