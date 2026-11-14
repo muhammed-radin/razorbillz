@@ -122,9 +122,12 @@ function decryptComment(comment) {
   if (!comment) return comment;
   return {
     ...comment,
-    userName: decryptField(comment.userName),
-    userEmail: decryptField(comment.userEmail),
-    userAvatar: decryptField(comment.userAvatar),
+    /* Explicit AAD contexts — the fields are sealed with
+     * `comment:<field>` (see sealCommentAuthorFields), and those
+     * contexts are not in decryptField's fallback list. */
+    userName: decryptField(comment.userName, { context: "comment:userName" }),
+    userEmail: decryptField(comment.userEmail, { context: "comment:userEmail" }),
+    userAvatar: decryptField(comment.userAvatar, { context: "comment:userAvatar" }),
   };
 }
 

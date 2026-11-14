@@ -14,6 +14,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { api } from "@/utils/api";
+import { useUserSession } from "@/contexts/user-session-context";
 import HeroSection from "./components/HeroSection";
 import CategoryShowcase from "./components/CategoryShowcase";
 import FeaturedProducts from "./components/FeaturedProducts";
@@ -55,11 +56,16 @@ function normalize(p) {
 
 export default function HomePage() {
   const { t } = useTranslation();
+  const { data: account } = useUserSession();
   const [latest, setLatest] = useState([]);
   const [featured, setFeatured] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
+
+  // The feed endpoint is session-gated (`requireSession`), so it must not
+  // fire until the account/session bootstrap has produced a session.
+  const accountReady = Boolean(account?.user);
 
   useStrictEffect(() => {
     const hydrateUserState = async () => {
@@ -83,11 +89,23 @@ export default function HomePage() {
 
   useStrictEffect(() => {
     let live = true;
+    const timeout = setTimeout(() => {
+      if (live) setLoading(false);
+    }, 8000);
+
+    // Wait for the session/account bootstrap before hitting the
+    // session-gated feed and category endpoints.
+    if (!accountReady) {
+      return () => {
+        live = false;
+        clearTimeout(timeout);
+      };
+    }
+
     Promise.allSettled([
-      api.waitForSession(),
       api.client.get("/api/products/feed"),
       api.client.get("/api/categories?limit=12"),
-    ]).then(([, feed, cats]) => {
+    ]).then(([feed, cats]) => {
       if (!live) return;
       if (feed.status === "fulfilled") {
         const d = feed.value.data || {};
@@ -105,14 +123,11 @@ export default function HomePage() {
       }
       setLoading(false);
     });
-    const t = setTimeout(() => {
-      if (live) setLoading(false);
-    }, 8000);
     return () => {
       live = false;
-      clearTimeout(t);
+      clearTimeout(timeout);
     };
-  }, []);
+  }, [accountReady]);
 
   // Live data only — no placeholder products.
   const trending = useMemo(
