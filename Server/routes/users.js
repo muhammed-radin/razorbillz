@@ -113,10 +113,10 @@ router.post("/profile", requireAuth, passUserAuth, async (req, res) => {
     // 1. Check if it's a Better Auth specific API error
     if (isAPIError(error)) {
       // Example: User not found / Session expired usually returns a 401 or 404 status
-      return res.status(error.status).json({
+      return res.status(error.statusCode).json({
         success: false,
         message: error.message, // e.g., "Unauthorized" or validation errors
-        errorCode: error.code, // e.g., "USER_NOT_FOUND" or "SESSION_EXPIRED"
+        errorCode: error.status, // e.g., "USER_NOT_FOUND" or "SESSION_EXPIRED"
         error: error, // Include the full error object for debugging purposes
       });
     }
@@ -239,20 +239,35 @@ router.get(
             // all "contains" semantics) on DECRYPTED values so only
             // scattered-gram false positives get dropped.
             return (
-              String(u.name ?? "").toLowerCase().includes(needle) ||
-              String(u.email ?? "").toLowerCase().includes(needle) ||
-              String(u.phoneNumber ?? "").replace(/\s+/g, "").toLowerCase().includes(needle.replace(/\s+/g, "")) ||
-              String(u.id ?? "").toLowerCase().includes(needle)
+              String(u.name ?? "")
+                .toLowerCase()
+                .includes(needle) ||
+              String(u.email ?? "")
+                .toLowerCase()
+                .includes(needle) ||
+              String(u.phoneNumber ?? "")
+                .replace(/\s+/g, "")
+                .toLowerCase()
+                .includes(needle.replace(/\s+/g, "")) ||
+              String(u.id ?? "")
+                .toLowerCase()
+                .includes(needle)
             );
           });
         safeUsers = safeUsers.map((u) => {
           const clean = { ...u };
           for (const k of [
-            "name_idx", "email_idx", "phone_idx",
-            "name_prefix", "name_grams",
-            "email_prefix", "email_grams",
-            "phone_prefix", "phone_grams",
-            "password", "token",
+            "name_idx",
+            "email_idx",
+            "phone_idx",
+            "name_prefix",
+            "name_grams",
+            "email_prefix",
+            "email_grams",
+            "phone_prefix",
+            "phone_grams",
+            "password",
+            "token",
           ]) {
             delete clean[k];
           }
@@ -307,10 +322,15 @@ router.get(
         profilePicture: decryptField(u.profilePicture),
       });
       for (const k of [
-        "name_idx", "email_idx", "phone_idx",
-        "name_prefix", "name_grams",
-        "email_prefix", "email_grams",
-        "phone_prefix", "phone_grams",
+        "name_idx",
+        "email_idx",
+        "phone_idx",
+        "name_prefix",
+        "name_grams",
+        "email_prefix",
+        "email_grams",
+        "phone_prefix",
+        "phone_grams",
       ]) {
         delete clean[k];
       }
