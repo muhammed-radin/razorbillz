@@ -189,9 +189,11 @@ const ProductDetailsPage = () => {
         `products:similar:${id}`,
         async () => {
           const data = await productsApi.similar(id, { limit: 8 });
-          return Array.isArray(data) ? data : (data.products ?? []);
+          return Array.isArray(data)
+            ? data
+            : (data.products ?? data.result ?? []);
         },
-        { ttl: 10 * 60 * 1000 }
+        { ttl: 5 * 60 * 1000 }
       )
       .then((list) => {
         setSimilar(list);

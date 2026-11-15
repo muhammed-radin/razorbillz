@@ -11,7 +11,7 @@ import {
   requireSession,
 } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
-import { evt, Evts, ProductEvent } from "../utils/events.manage.js";
+import { evt, Evts, ProductEvent, ErrorEvent } from "../utils/events.manage.js";
 
 const router = express.Router();
 
@@ -373,7 +373,9 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
       return res.json(productMemoryCache.getLocalMemory(req.url));
     }
 
-    const limit = parseInt(req.query?.limit) || parseInt(req.body?.limit) || 5;
+    const parsedLimit =
+      parseInt(req.query?.limit, 10) || parseInt(req.body?.limit, 10) || 5;
+    const limit = Math.min(Math.max(parsedLimit, 1), 24);
 
     if (!productId) {
       return res.status(400).json({ error: "Product ID is required" });
@@ -387,16 +389,31 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
       return res.status(404).json({ error: "Product not found" });
     }
 
-    // 2. Query similar items using an aggregation pipeline with multi-stage fallbacks
+    /* Shared exclusion/filter for every recommendation strategy.
+     * `isActive: { $ne: false }` keeps legacy rows that predate the
+     * field while hiding explicitly disabled products. */
+    const recommendationFilter = {
+      _id: { $ne: targetProduct._id },
+      id: { $ne: targetProduct.id },
+      isActive: { $ne: false },
+    };
+    const targetTags = Array.isArray(targetProduct.tags)
+      ? targetProduct.tags
+      : [];
+    const targetKeywords = Array.isArray(targetProduct.keywords)
+      ? targetProduct.keywords
+      : [];
+
+    // 2. Contextual matches first: tag/keyword/brand score, then category/brand.
     const [results] = await ProductModel.aggregate([
       {
         $facet: {
-          // Strategy 1: Smart Similarity based on tags/keywords (Must match category)
+          // Strategy 1: smart similarity based on tags/keywords + brand.
+          // Category must match so recommendations stay relevant.
           similar: [
             {
               $match: {
-                _id: { $ne: targetProduct._id },
-                id: { $ne: targetProduct.id },
+                ...recommendationFilter,
                 category: targetProduct.category,
               },
             },
@@ -404,14 +421,17 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
               $addFields: {
                 matchedTagsCount: {
                   $size: {
-                    $setIntersection: ["$tags", targetProduct.tags || []],
+                    $setIntersection: [
+                      { $ifNull: ["$tags", []] },
+                      targetTags,
+                    ],
                   },
                 },
                 matchedKeywordsCount: {
                   $size: {
                     $setIntersection: [
-                      "$keywords",
-                      targetProduct.keywords || [],
+                      { $ifNull: ["$keywords", []] },
+                      targetKeywords,
                     ],
                   },
                 },
@@ -432,61 +452,62 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
               },
             },
             { $match: { totalScore: { $gt: 0 } } },
-            { $sort: { totalScore: -1 } },
+            { $sort: { totalScore: -1, createdAt: -1 } },
             { $limit: limit },
           ],
 
-          // Strategy 2: Fallback to same Category or Brand (Ignoring tags/keywords)
+          // Strategy 2: same category or brand, newest first.
           sameCategoryOrBrand: [
             {
               $match: {
-                _id: { $ne: targetProduct._id },
-                id: { $ne: targetProduct.id },
+                ...recommendationFilter,
                 $or: [
                   { category: targetProduct.category },
                   { brand: targetProduct.brand },
                 ],
               },
             },
-            { $sort: { createdAt: -1 } }, // Newest within the same context
-            { $limit: limit },
-          ],
-
-          // Strategy 3: Hard Fallback to just the latest products globally
-          latestGlobal: [
-            {
-              $match: {
-                _id: { $ne: targetProduct._id },
-                id: { $ne: targetProduct.id },
-              },
-            },
-            { $sort: { createdAt: -1 } }, // Globally newest arrivals
+            { $sort: { createdAt: -1 } },
             { $limit: limit },
           ],
         },
       },
     ]);
 
-    // 3. Fallback Evaluation Loop
+    // 3. Fallback evaluation.
     let finalProducts = [];
+    let fallback = "similar";
 
-    if (results?.similar && results.similar.length > 0) {
+    if (results?.similar?.length > 0) {
       finalProducts = results.similar;
-    } else if (
-      results?.sameCategoryOrBrand &&
-      results.sameCategoryOrBrand.length > 0
-    ) {
+    } else if (results?.sameCategoryOrBrand?.length > 0) {
       finalProducts = results.sameCategoryOrBrand;
+      fallback = "category_brand";
     } else {
-      finalProducts = results?.latestGlobal || [];
+      /* Nothing related at all: show random active products instead of
+       * the same "newest products" list on every product page. */
+      finalProducts = await ProductModel.aggregate([
+        { $match: recommendationFilter },
+        { $sample: { size: limit } },
+      ]);
+      fallback = "random";
     }
 
-    // 4. Cache & Return Payload
-    if (finalProducts && finalProducts.length > 0) {
+    // 4. Cache & return payload. Random results rotate more often.
+    const responsePayload = {
+      products: finalProducts,
+      // Kept for older clients that read `result` from this endpoint.
+      result: finalProducts,
+      count: finalProducts.length,
+      fallback,
+      fromCache: false,
+    };
+
+    if (finalProducts.length > 0) {
       productMemoryCache.setLocalMemory(
         req.url,
-        { products: finalProducts, fromCache: true },
-        60 * 60 * 24, // One day in seconds
+        { ...responsePayload, fromCache: true },
+        fallback === "random" ? 60 * 5 : 60 * 60 * 24,
       );
     }
 
@@ -495,16 +516,20 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
       new ProductEvent({
         type: Evts.PRODUCT_SEARCHED,
         product: null,
-        response: { products: finalProducts, fromCache: false },
+        response: {
+          products: finalProducts,
+          fallback,
+          fromCache: false,
+        },
         isReq: true,
         reqPath: req.url,
-        userId: req.user.id,
-        actorId: req.user.id,
+        userId: req.user?.id,
+        actorId: req.user?.id,
         productId,
       }),
     );
 
-    return res.json({ result: finalProducts, fromCache: false });
+    return res.json(responsePayload);
   } catch (err) {
     console.error("Error in similar products aggregation:", err);
     evt.fire(
