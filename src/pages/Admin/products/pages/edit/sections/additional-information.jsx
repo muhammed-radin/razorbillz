@@ -12,8 +12,8 @@ import {
     FormLabel,
     FormMessage,
 } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { WARRANTY_OPTIONS, RETURN_POLICY_OPTIONS, SHIPPING_POLICY_OPTIONS } from "@/constants/policy-options"
 
 export default function AdditionalInformationSection({ form }) {
     return (
@@ -31,9 +31,20 @@ export default function AdditionalInformationSection({ form }) {
                     render={({ field }) => (
                         <FormItem>
                             <FormLabel>Warranty</FormLabel>
-                            <FormControl>
-                                <Input placeholder="e.g., 1 Year Manufacturer Warranty" {...field} />
-                            </FormControl>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select warranty policy" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-52 overflow-y-auto">
+                                    {WARRANTY_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <FormMessage />
                         </FormItem>
                     )}
@@ -44,12 +55,20 @@ export default function AdditionalInformationSection({ form }) {
                     render={({ field }) => (
                         <FormItem>
                             <FormLabel>Return Policy</FormLabel>
-                            <FormControl>
-                                <Textarea
-                                    placeholder="Describe the return policy"
-                                    {...field}
-                                />
-                            </FormControl>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select return policy" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-52 overflow-y-auto">
+                                    {RETURN_POLICY_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <FormMessage />
                         </FormItem>
                     )}
@@ -60,12 +79,20 @@ export default function AdditionalInformationSection({ form }) {
                     render={({ field }) => (
                         <FormItem>
                             <FormLabel>Shipping Details</FormLabel>
-                            <FormControl>
-                                <Textarea
-                                    placeholder="Describe shipping information"
-                                    {...field}
-                                />
-                            </FormControl>
+                            <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                    <SelectTrigger>
+                                        <SelectValue placeholder="Select shipping policy" />
+                                    </SelectTrigger>
+                                </FormControl>
+                                <SelectContent className="max-h-52 overflow-y-auto">
+                                    {SHIPPING_POLICY_OPTIONS.map((option) => (
+                                        <SelectItem key={option.value} value={option.value}>
+                                            {option.label}
+                                        </SelectItem>
+                                    ))}
+                                </SelectContent>
+                            </Select>
                             <FormMessage />
                         </FormItem>
                     )}

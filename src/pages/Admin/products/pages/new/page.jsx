@@ -887,7 +887,7 @@ export default function NewProductPage() {
         >
           <Accordion
             defaultValue={["basic"]}
-            type="single"
+            type="multiple"
             className="space-y-4"
           >
             {/* Basic Information */}

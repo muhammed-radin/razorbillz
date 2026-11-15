@@ -27,6 +27,29 @@ import {
   Plus,
   PackageSearch,
   Play,
+  Shield,
+  ShieldCheck,
+  ShieldX,
+  ShieldAlert,
+  ShieldPlus,
+  Package,
+  PackageCheck,
+  PackageX,
+  ArrowLeftRight,
+  RefreshCw,
+  Wallet,
+  ClipboardCheck,
+  Truck,
+  Zap,
+  Clock,
+  CalendarCheck,
+  Gift,
+  IndianRupee,
+  MapPin,
+  Timer,
+  Globe,
+  AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { currency } from "@/utils/currency";
@@ -43,7 +66,17 @@ import {
   DrawerTrigger,
 } from "@/components/ui/drawer";
 
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import {
+  WARRANTY_OPTIONS,
+  RETURN_POLICY_OPTIONS,
+  SHIPPING_POLICY_OPTIONS,
+  getPolicyOption,
+} from "@/constants/policy-options";
 import {
   Empty,
   EmptyHeader,
@@ -68,6 +101,77 @@ import { useApiCacheStore } from "@/stores/apiCacheStore";
 const ProductVideoPlayer = lazy(
   () => import("@/components/product-video-player"),
 );
+
+const POLICY_ICON_MAP = {
+  Shield,
+  ShieldCheck,
+  ShieldX,
+  ShieldAlert,
+  ShieldPlus,
+  Package,
+  PackageCheck,
+  PackageX,
+  ArrowLeftRight,
+  RefreshCw,
+  Wallet,
+  ClipboardCheck,
+  Truck,
+  Zap,
+  Clock,
+  CalendarCheck,
+  Gift,
+  IndianRupee,
+  MapPin,
+  Timer,
+  Globe,
+  AlertTriangle,
+};
+
+function PolicyCard({ defaultIcon: DefaultIcon, iconName, title, label, description }) {
+  const [isOpen, setIsOpen] = useState(false);
+  const IconComponent = (iconName && POLICY_ICON_MAP[iconName]) ? POLICY_ICON_MAP[iconName] : DefaultIcon;
+
+  return (
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="w-full">
+      <Card className="overflow-hidden border border-border/80 hover:border-primary/50 transition-all duration-200">
+        <CollapsibleTrigger asChild>
+          <button
+            type="button"
+            className="w-full text-left p-4 flex items-center justify-between gap-3 hover:bg-muted/40 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group"
+            aria-expanded={isOpen}
+          >
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary group-hover:scale-105 transition-transform">
+                {IconComponent ? <IconComponent className="h-5 w-5" /> : <Shield className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0">
+                <Badge variant="secondary" className="text-[11px] px-2 py-0 mb-1 font-semibold tracking-wide">
+                  {title}
+                </Badge>
+                <p className="text-sm font-semibold text-foreground truncate">{label}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 shrink-0 text-muted-foreground ml-2">
+              <ChevronDown
+                className={cn(
+                  "h-4 w-4 transition-transform duration-200",
+                  isOpen && "rotate-180"
+                )}
+              />
+            </div>
+          </button>
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <div className="px-4 pb-4 pt-2 border-t border-border/60 bg-muted/15">
+            <p className="text-sm text-muted-foreground leading-relaxed">
+              {description}
+            </p>
+          </div>
+        </CollapsibleContent>
+      </Card>
+    </Collapsible>
+  );
+}
 
 const ProductDetailsPage = () => {
   const { t } = useTranslation();
@@ -613,142 +717,189 @@ const ProductDetailsPage = () => {
         </div>
       </div>
 
-      {/* Product Details Tabs */}
+      {/* Product Details */}
       <div className="max-w-7xl mt-12 space-y-8">
         <Separator />
-        {/* Detailed Description */}
-        <div className="sm:max-w-3xl max-sm:max-w-full">
-          <h2 className="text-2xl font-bold mb-4">
-            {t("product.productDetails")}
-          </h2>
-          <StyledMd>
-            {product.detailedDescription || product.description}
-          </StyledMd>
+
+        {/* Product Policies */}
+        {(product.warranty || product.returnPolicy || product.shippingDetails) && (
+          <section className="space-y-4">
+            <h2 className="text-2xl font-bold">
+              {t("product.policies", { defaultValue: "Policies" })}
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {product.warranty && (() => {
+                const option = getPolicyOption(WARRANTY_OPTIONS, product.warranty);
+                if (!option) return null;
+                return (
+                  <PolicyCard
+                    defaultIcon={Shield}
+                    iconName={option.icon}
+                    title={t("product.warranty", { defaultValue: "Warranty" })}
+                    label={option.label}
+                    description={option.description}
+                  />
+                );
+              })()}
+              {product.returnPolicy && (() => {
+                const option = getPolicyOption(RETURN_POLICY_OPTIONS, product.returnPolicy);
+                if (!option) return null;
+                return (
+                  <PolicyCard
+                    defaultIcon={Package}
+                    iconName={option.icon}
+                    title={t("product.returnPolicy", { defaultValue: "Return Policy" })}
+                    label={option.label}
+                    description={option.description}
+                  />
+                );
+              })()}
+              {product.shippingDetails && (() => {
+                const option = getPolicyOption(SHIPPING_POLICY_OPTIONS, product.shippingDetails);
+                if (!option) return null;
+                return (
+                  <PolicyCard
+                    defaultIcon={Truck}
+                    iconName={option.icon}
+                    title={t("product.shippingDetails", { defaultValue: "Shipping" })}
+                    label={option.label}
+                    description={option.description}
+                  />
+                );
+              })()}
+            </div>
+          </section>
+        )}
+
+        {/* Detailed Description + Specifications + Features with Similar Products on the right */}
+        <div className="flex flex-col lg:flex-row gap-8 items-start">
+          {/* Detailed Description, Specifications & Features - takes 2/3 space */}
+          <div className="lg:w-2/3 w-full space-y-8">
+            <div>
+              <h2 className="text-2xl font-bold mb-4">
+                {t("product.productDetails")}
+              </h2>
+              <StyledMd>
+                {product.detailedDescription || product.description}
+              </StyledMd>
+            </div>
+
+            {/* Specifications & Features */}
+            {((product.specifications && product.specifications.length > 0) ||
+              (product.features && product.features.length > 0)) && (
+              <div
+                className={cn(
+                  "grid gap-4",
+                  product.specifications?.length && product.features?.length
+                    ? "grid-cols-1 md:grid-cols-2"
+                    : "grid-cols-1"
+                )}
+              >
+                {/* Specifications */}
+                {product.specifications && product.specifications.length > 0 && (
+                  <Card className="w-full">
+                    <CardHeader>
+                      <CardTitle>{t("product.specifications")}</CardTitle>
+                      <CardDescription>{t("product.techSpecs")}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 gap-y-1">
+                        {product.specifications.map((spec, index) => (
+                          <div
+                            key={index}
+                            className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-2 py-2 border-b last:border-b-0"
+                          >
+                            <span className="font-medium text-sm shrink-0">
+                              {spec.label}
+                            </span>
+                            <span className="text-sm text-muted-foreground sm:text-right break-words">
+                              {spec.value}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Features */}
+                {product.features && product.features.length > 0 && (
+                  <Card className="w-full">
+                    <CardHeader>
+                      <CardTitle>{t("product.features")}</CardTitle>
+                      <CardDescription>{t("product.keyFeatures")}</CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <ul className="grid grid-cols-1 gap-3">
+                        {product.features.map((feature, index) => (
+                          <li key={index} className="flex items-start space-x-2">
+                            <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
+                            <span className="text-sm">{feature}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </CardContent>
+                  </Card>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Similar Products - right sidebar on desktop */}
+          <div className="lg:w-1/3 w-full">
+            <h2 className="text-xl font-bold mb-4">
+              {t("product.similarProducts", {
+                defaultValue: "Similar Products",
+              })}
+            </h2>
+            {similar && similar.length > 0 ? (
+              <div className="flex flex-col gap-4">
+                {similar.map((item, index) => (
+                  <HorizontalProductCard
+                    key={item.id ?? item.productId ?? index}
+                    product={item}
+                    index={index}
+                  />
+                ))}
+              </div>
+            ) : (
+              <Empty className="border border-dashed rounded-2xl py-12">
+                <EmptyHeader>
+                  <EmptyMedia variant="icon">
+                    <PackageSearch className="size-6 text-muted-foreground" />
+                  </EmptyMedia>
+                  <EmptyTitle>
+                    {t("product.noSimilarTitle", {
+                      defaultValue: "No Similar Products Found",
+                    })}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {t("product.noSimilarDesc", {
+                      defaultValue: `We couldn't find any other products from ${product.brand || "this brand"} at the moment.`,
+                      brand: product.brand || "",
+                    })}
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            )}
+          </div>
         </div>
 
-        <section className="flex flex-col xl:flex-row w-full gap-4">
-          {/* Specifications */}
-          <Card className="w-full xl:w-1/2">
+        {/* Customer Reviews */}
+        <section className="space-y-4">
+          <Card className="bg-background">
             <CardHeader>
-              <CardTitle>{t("product.specifications")}</CardTitle>
-              <CardDescription>{t("product.techSpecs")}</CardDescription>
+              <CardTitle>{t("product.customerReviews")}</CardTitle>
+              <CardDescription>
+                {t("product.reviewsSubtitle")}
+              </CardDescription>
+              <Separator className="my-2" />
             </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 xl:grid-cols-1 gap-x-6 gap-y-1">
-                {product.specifications &&
-                  product.specifications.map((spec, index) => (
-                    <div
-                      key={index}
-                      className="flex flex-col sm:flex-row sm:items-baseline sm:justify-between gap-1 sm:gap-2 py-2 border-b last:border-b-0"
-                    >
-                      <span className="font-medium text-sm shrink-0">
-                        {spec.label}
-                      </span>
-                      <span className="text-sm text-muted-foreground sm:text-right break-words">
-                        {spec.value}
-                      </span>
-                    </div>
-                  ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Features */}
-          <Card className="w-full xl:w-1/2">
-            <CardHeader>
-              <CardTitle>{t("product.features")}</CardTitle>
-              <CardDescription>{t("product.keyFeatures")}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ul className="grid grid-cols-1 gap-3">
-                {product.features &&
-                  product.features.map((feature, index) => (
-                    <li key={index} className="flex items-start space-x-2">
-                      <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 flex-shrink-0" />
-                      <span className="text-sm">{feature}</span>
-                    </li>
-                  ))}
-              </ul>
+            <CardContent className="w-full">
+              <ReviewRatingSection key={id} productId={id} />
             </CardContent>
           </Card>
         </section>
-
-        {/* Tabs: Similar Products (default) and Customer Reviews */}
-        <div className="max-w-7xl mt-12 space-y-8">
-          <Tabs defaultValue="similar">
-            <TabsList>
-              <TabsTrigger value="similar">
-                {t("product.brandProductsTab", {
-                  brand: product.brand || "",
-                  defaultValue: `Products From ${product.brand || ""}`,
-                })}
-              </TabsTrigger>
-              <TabsTrigger value="review">
-                {t("product.reviewsTab", { defaultValue: "Reviews" })}
-              </TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="similar" className="w-full">
-              <Card className="bg-background">
-                <CardHeader>
-                  <CardTitle>
-                    {t("product.brandProductsTab", {
-                      brand: product.brand || "",
-                      defaultValue: `Products From ${product.brand || ""}`,
-                    })}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="w-full">
-                  {similar && similar.length > 0 ? (
-                    <div className="flex flex-wrap gap-4 flex-row items-stretch justify-center">
-                      {similar.map((item, index) => (
-                        <HorizontalProductCard
-                          key={item.id ?? item.productId ?? index}
-                          product={item}
-                          index={index}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <Empty className="border border-dashed rounded-2xl py-12">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <PackageSearch className="size-6 text-muted-foreground" />
-                        </EmptyMedia>
-                        <EmptyTitle>
-                          {t("product.noSimilarTitle", {
-                            defaultValue: "No Similar Products Found",
-                          })}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          {t("product.noSimilarDesc", {
-                            defaultValue: `We couldn't find any other products from ${product.brand || "this brand"} at the moment.`,
-                            brand: product.brand || "",
-                          })}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
-                  )}
-                </CardContent>
-              </Card>
-            </TabsContent>
-
-            <TabsContent value="review" className="w-full">
-              <Card className="bg-background">
-                <CardHeader>
-                  <CardTitle>{t("product.customerReviews")}</CardTitle>
-                  <CardDescription>
-                    {t("product.reviewsSubtitle")}
-                  </CardDescription>
-                  <Separator className="my-2" />
-                </CardHeader>
-                <CardContent className="w-full">
-                  <ReviewRatingSection key={id} productId={id} />
-                </CardContent>
-              </Card>
-            </TabsContent>
-          </Tabs>
-        </div>
       </div>
     </div>
   );

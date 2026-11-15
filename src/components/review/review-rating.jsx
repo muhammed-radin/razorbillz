@@ -412,20 +412,22 @@ export function ReviewRatingSection({ productId }) {
               </p>
             </div>
           ) : (
-            currentReviews.map((review) => {
-              const userName = review.userName;
-              const owner = isOwnReview(review);
-              const isEditing = editingId === review.id;
-              const isDeleting = deletingId === review.id;
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {currentReviews.map((review) => {
+                const userName = review.userName;
+                const owner = isOwnReview(review);
+                const isEditing = editingId === review.id;
+                const isDeleting = deletingId === review.id;
 
-              return (
-                <Card
-                  key={review.id}
-                  className={cn(
-                    "shadow-none transition-shadow hover:shadow-sm",
-                    owner && "border-primary/30 bg-primary/[0.02]",
-                  )}
-                >
+                return (
+                  <Card
+                    key={review.id}
+                    className={cn(
+                      "shadow-none transition-shadow hover:shadow-sm",
+                      owner && "border-primary/30 bg-primary/[0.02]",
+                      isEditing && "md:col-span-2",
+                    )}
+                  >
                   <CardContent className="p-4 sm:p-5">
                     <div className="flex items-start gap-3">
                       <Avatar className="bg-muted size-10 shrink-0">
@@ -609,7 +611,8 @@ export function ReviewRatingSection({ productId }) {
                   </CardContent>
                 </Card>
               );
-            })
+            })}
+            </div>
           )}
 
           {totalPages > 1 ? (

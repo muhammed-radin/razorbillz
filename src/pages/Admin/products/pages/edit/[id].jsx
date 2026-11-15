@@ -1004,7 +1004,7 @@ export default function EditProductPage() {
           >
             <Accordion
               defaultValue={["basic"]}
-              type="single"
+              type="multiple"
               className="space-y-4"
             >
               {/* Basic Information */}
