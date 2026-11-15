@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Send } from "lucide-react";
-import { Star } from "lucide-react";
+import { Lock, Send } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -9,45 +9,119 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { commentsApi, interactionsApi } from "@/services/shop";
+import { openAuthenticationModal } from "@/utils/signin-modal-required";
+import { ReviewRatingStars } from "./review-rating-stars";
 
-export function ReviewRatingReviewForm({ storeData, productId, onSubmitted }) {
+export function ReviewRatingReviewForm({
+  storeData,
+  productId,
+  onSubmitted,
+  canWrite = true,
+  isGuest = false,
+}) {
+  const { t } = useTranslation();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [rating, setRating] = useState(0);
-  const [hoveredStar, setHoveredStar] = useState(0);
-  const [formData, setFormData] = useState({
-    review: "",
-    rating: 0,
-  });
+  const [reviewText, setReviewText] = useState("");
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    if (!canWrite) {
+      openAuthenticationModal();
+      return;
+    }
+
+    if (!reviewText.trim()) {
+      toast.error(
+        t("product.reviewContentRequired", {
+          defaultValue: "Please write your review before submitting.",
+        }),
+      );
+      return;
+    }
+
+    if (rating < 1) {
+      toast.error(
+        t("product.ratingRequired", {
+          defaultValue: "Please choose a rating.",
+        }),
+      );
+      return;
+    }
+
     setIsSubmitting(true);
     try {
-      if (productId) {
-        await commentsApi.create(productId, formData.review, rating);
+      if (!productId) {
+        // No product context — showcase mode
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      } else {
+        await commentsApi.create(productId, reviewText.trim(), rating);
         if (rating > 0) {
           await interactionsApi.rate(productId, rating).catch(() => {});
         }
-        toast.success("Review submitted!");
+        toast.success(
+          t("product.reviewSubmitted", {
+            defaultValue: "Review submitted!",
+          }),
+        );
         onSubmitted?.();
-      } else {
-        // No product context — showcase mode
-        await new Promise((resolve) => setTimeout(resolve, 1000));
       }
       setRating(0);
-      setFormData({ name: "", email: "", review: "" });
+      setReviewText("");
     } catch {
-      toast.error("Please log in to submit a review.");
+      toast.error(
+        t("product.reviewSubmitFailed", {
+          defaultValue: "Could not submit your review. Please sign in again.",
+        }),
+      );
     } finally {
       setIsSubmitting(false);
     }
   };
+
+  if (!canWrite) {
+    return (
+      <div className="lg:sticky lg:top-8 lg:h-fit">
+        <Card>
+          <CardHeader>
+            <div className="mb-1 flex size-10 items-center justify-center rounded-full bg-muted">
+              <Lock className="size-5 text-muted-foreground" />
+            </div>
+            <CardTitle>
+              {t("product.signInToReviewTitle", {
+                defaultValue: "Sign in to write a review",
+              })}
+            </CardTitle>
+            <CardDescription>
+              {isGuest
+                ? t("product.guestReviewNotice", {
+                    defaultValue:
+                      "You're browsing as a guest. Sign in to share your experience with this product.",
+                  })
+                : t("product.signInToReviewDesc", {
+                    defaultValue:
+                      "Create an account or sign in to rate and review this product.",
+                  })}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button
+              type="button"
+              className="h-9 w-full cursor-pointer"
+              onClick={() => openAuthenticationModal()}
+            >
+              {t("product.signIn", { defaultValue: "Sign in" })}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="lg:sticky lg:top-8 lg:h-fit">
@@ -57,51 +131,32 @@ export function ReviewRatingReviewForm({ storeData, productId, onSubmitted }) {
           <CardDescription>{storeData.formDescription}</CardDescription>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div className="flex flex-col gap-2">
-              <div className="flex gap-1" role="radiogroup" aria-label="Rating">
-                {[1, 2, 3, 4, 5].map((star) => (
-                  <Button
-                    variant="ghost"
-                    key={star}
-                    type="button"
-                    onClick={() => setRating(star)}
-                    onMouseEnter={() => setHoveredStar(star)}
-                    onMouseLeave={() => setHoveredStar(0)}
-                    className="h-9 px-4 py-2 focus-visible:ring-ring cursor-pointer rounded-full !p-1 hover:bg-transparent focus:outline-hidden focus-visible:ring-2"
-                    aria-pressed={rating === star}
-                    aria-label={`Rate ${star} ${star === 1 ? "star" : "stars"}`}
-                  >
-                    <Star
-                      className={cn(
-                        "size-6",
-                        (hoveredStar || rating) >= star
-                          ? "fill-foreground"
-                          : "",
-                      )}
-                    />
-                  </Button>
-                ))}
-              </div>
+              <Label>{t("product.yourRating", { defaultValue: "Your rating" })}</Label>
+              <ReviewRatingStars
+                value={rating}
+                onChange={setRating}
+                size="size-6"
+              />
             </div>
 
             <div className="flex flex-col gap-2">
               <Label htmlFor="review">{storeData.reviewLabel}</Label>
               <Textarea
                 id="review"
-                value={formData.review}
-                onChange={(e) =>
-                  setFormData({ ...formData, review: e.target.value })
-                }
+                value={reviewText}
+                onChange={(e) => setReviewText(e.target.value)}
                 placeholder={storeData.reviewPlaceholder}
                 required
                 aria-required="true"
+                className="min-h-28 resize-y"
               />
             </div>
 
             <Button
               type="submit"
-              className="h-9 px-4 py-2 w-full cursor-pointer"
+              className="h-9 w-full cursor-pointer gap-2"
               disabled={isSubmitting}
             >
               {isSubmitting

@@ -7,6 +7,7 @@ import {
   gramTokens,
   indexPII,
   prefixTokens,
+  wordPrefixTokens,
 } from "./blindIndex.js";
 
 /* =========================================================
@@ -261,7 +262,12 @@ export function advancedPIIIdx(values, spec = USER_INDEX_SPEC) {
     if (value === undefined || value === null || value === "") continue;
     try {
       out[`${field}_idx`] = blindIndex(value, purpose);
-      const prefix = prefixTokens(value, purpose);
+      const prefix = [
+        ...new Set([
+          ...prefixTokens(value, purpose),
+          ...wordPrefixTokens(value, purpose),
+        ]),
+      ];
       if (prefix.length) out[`${field}_prefix`] = prefix;
       const grams = gramTokens(value, purpose);
       if (grams.length) out[`${field}_grams`] = grams;

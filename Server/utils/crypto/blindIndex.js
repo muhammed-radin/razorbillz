@@ -98,6 +98,27 @@ export function prefixTokens(value, purpose, maxLen = PREFIX_MAX) {
   return out;
 }
 
+/* Prefix tokens for EVERY word, so "rah" matches "Muhammed Rahif".
+ * Stored alongside the anchored whole-value prefixes; queries still
+ * emit a single prefix token and use array membership. */
+export function wordPrefixTokens(value, purpose, maxLen = PREFIX_MAX) {
+  if (value === null || value === undefined || value === "") return [];
+  const n = normalizeByPurpose(purpose)(value);
+  if (!n) return [];
+  const key = getActiveBlindIndexKeySync(purpose);
+  if (!key) throw new Error("blind index unavailable: no active master key");
+  const out = new Set();
+  for (const word of n.split(" ")) {
+    if (!word) continue;
+    for (let i = 1; i <= Math.min(word.length, maxLen); i += 1) {
+      out.add(
+        truncatedHexHmac(key, `${purpose}:${PREFIX_MARKER}:${word.slice(0, i)}`),
+      );
+    }
+  }
+  return [...out];
+}
+
 /* All 3-grams of a value, capped for very long values. */
 export function gramTokens(
   value,

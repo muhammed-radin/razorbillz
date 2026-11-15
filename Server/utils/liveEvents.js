@@ -1,4 +1,5 @@
 import { evt, eventSector, isMajorEvent } from "./events.manage.js";
+import { archiveTelemetry } from "./liveEventsArchive.js";
 
 /* =========================================================
  * Owner-only live telemetry
@@ -290,6 +291,7 @@ function recordEvent(eventInfo) {
   if (isMajor) bucket.events.major += 1;
 
   pushBounded(recentEvents, entry, MAX_RECENT);
+  archiveTelemetry("events", entry);
   if (streamClients.size) pending.events.push(entry);
 }
 
@@ -367,6 +369,7 @@ function recordRequest({ method, path, status, durationMs }) {
   };
 
   pushBounded(recentRequests, entry, MAX_RECENT);
+  archiveTelemetry("requests", entry);
   if (streamClients.size) pending.requests.push(entry);
 }
 
@@ -429,6 +432,7 @@ function recordDbOperation(operation, collection) {
   };
 
   pushBounded(recentDbOperations, entry, MAX_RECENT);
+  archiveTelemetry("db", entry);
   if (streamClients.size) pending.db.push(entry);
 }
 

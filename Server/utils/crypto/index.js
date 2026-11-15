@@ -33,6 +33,7 @@ export {
   blindIndex,
   eqToken,
   prefixTokens,
+  wordPrefixTokens,
   gramTokens,
   searchTokens,
   indexPII,

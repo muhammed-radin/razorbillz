@@ -66,8 +66,10 @@ router.use("/support", supportRouter);
 /* E2EE keybags + client-encrypted vault (Tier B) */
 router.use("/e2ee", e2eeRouter);
 
-/* Comment routes */
-router.use("/comments", requireAuth, commentsRouter);
+/* Comment routes
+ * Auth is enforced per route: reads require any session (guests included),
+ * while writes require a non-anonymous account. */
+router.use("/comments", commentsRouter);
 
 /* Agenda Development Routes */
 router.use("/jobs", devMiddleware, jobsRouter);

@@ -113,10 +113,12 @@ function migrateUserFields(userDoc) {
     }
   }
 
-  /* NAME / PHONE — advanced token families (eq/prefix/grams). */
-  for (const [plainKey, plainPurpose] of [
-    ["name", "name"],
-    ["phoneNumber", "phone"],
+  /* NAME / PHONE — advanced token families (eq/prefix/grams).
+   * Phone tokens use the `phone_*` family that the query layer and
+   * UserSchema expect (`phoneNumber` is only the sealed value). */
+  for (const [plainKey, plainPurpose, indexName] of [
+    ["name", "name", "name"],
+    ["phoneNumber", "phone", "phone"],
   ]) {
     const raw = target[plainKey];
     const plain =
@@ -127,8 +129,8 @@ function migrateUserFields(userDoc) {
         : null;
     if (typeof plain === "string" && plain) {
       Object.assign(set, advancedPIIIdx(
-        { [plainKey]: plain },
-        { [plainKey]: plainPurpose },
+        { [indexName]: plain },
+        { [indexName]: plainPurpose },
       ));
     }
   }

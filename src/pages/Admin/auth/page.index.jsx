@@ -2,13 +2,13 @@ import { Logo } from "@/components/logo";
 import { Outlet, useNavigate } from "react-router-dom";
 import { ThemeProvider } from "@/utils/theme-provider";
 
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect } from "react";
 import { LoaderScreen } from "@/components/LoaderScreen";
 import { authClient } from "@/lib/auth-client";
+import { isStaffRole } from "@shared/utils/roles";
 
 const AdminAuth = () => {
   const navigate = useNavigate();
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   const { data, isPending, error } = authClient.useSession();
 
@@ -20,7 +20,7 @@ const AdminAuth = () => {
       navigate("/404");
       return;
     }
-    if (!data || !data.user || data.user.role === "user") {
+    if (!data || !data.user || !isStaffRole(data.user.role)) {
       navigate("/404");
     }
   }, [data, error, isPending, navigate]);
@@ -30,7 +30,7 @@ const AdminAuth = () => {
       <ThemeProvider>
         {isPending ? (
           <LoaderScreen />
-        ) : data && data.user && data.user?.role !== "user" ? (
+        ) : data && data.user && isStaffRole(data.user?.role) ? (
           <Outlet />
         ) : (
           <div className="flex min-h-screen flex-col items-center justify-center bg-background">

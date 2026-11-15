@@ -76,8 +76,41 @@ import AvatarIcon from "@/components/avatar-icon";
 import { api } from "@/utils/api";
 import { alert } from "@/components/dialog-alert-provider";
 import z from "zod";
+import { parsePhoneNumberFromString } from "libphonenumber-js";
 import { authClient } from "@/lib/auth-client";
 import PaginationWithPrimaryButton from "@/components/customized/pagination/pagination-02";
+
+const NO_PHONE = "No phone number registered";
+
+/* Admin-entered numbers may omit the country code; assume the store's
+ * home country and normalise to the same "+CC national" shape the
+ * settings page stores. */
+function normalizeAdminPhone(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  const digits = trimmed.replace(/\D/g, "");
+  if (!digits) return "";
+  const parsed = parsePhoneNumberFromString(
+    trimmed.startsWith("+") ? trimmed : `+${digits}`,
+    "IN",
+  );
+  if (parsed?.isValid()) {
+    return `+${parsed.countryCallingCode} ${parsed.nationalNumber}`;
+  }
+  // Try as a national number (e.g. "9876543210").
+  const national = parsePhoneNumberFromString(digits, "IN");
+  if (national?.isValid()) {
+    return `+${national.countryCallingCode} ${national.nationalNumber}`;
+  }
+  return trimmed;
+}
+
+function isValidAdminPhone(value) {
+  if (!value) return true;
+  const normalized = normalizeAdminPhone(value);
+  const parsed = parsePhoneNumberFromString(normalized);
+  return Boolean(parsed?.isValid());
+}
 
 const customerTierConfig = {
   new: {
@@ -205,7 +238,9 @@ export default function CustomersPage() {
                 role: u.role ?? "user",
                 totalOrders: u.totalOrders ?? 0,
                 totalSpent: u.totalSpent ?? 0,
-                isActive: u.banned && u.isActive === false ? false : true,
+                // A customer is active only when not banned and not
+                // explicitly deactivated by an admin.
+                isActive: !u.banned && u.isActive !== false,
                 avatar: u.image ? decrypt(u.image) : null,
                 averageOrderValue: u.totalOrders
                   ? (u.totalSpent ?? 0) / u.totalOrders
@@ -226,7 +261,8 @@ export default function CustomersPage() {
                     : address.street && address.city
                       ? address.street + ", " + address.city
                       : "No location registered",
-                status: u.banned ? "inactive" : "active",
+                status:
+                  u.banned || u.isActive === false ? "inactive" : "active",
               };
             }),
           );
@@ -437,43 +473,26 @@ export default function CustomersPage() {
       })
       .then(function (result) {
         if (result && result.role && result.role !== customer.role) {
+          const newRole = result.role;
           toast.promise(
-            () =>
-              new Promise(async (resolve, reject) => {
-                const newRole = result.role;
-                authClient.admin
-                  .setRole(
-                    {
-                      userId: customer.id,
-                      role: newRole,
-                    },
-                    {
-                      onSuccess: () => {
-                        resolve();
-                        setCustomers(() =>
-                          customers.map((c) =>
-                            c.id === customer.id ? { ...c, role: newRole } : c,
-                          ),
-                        );
-                      },
-                      onError: (ctx) => {
-                        reject(ctx?.error?.message || "Failed to change role");
-                      },
-                    },
-                  )
-                  .then(({ error }) => {
-                    if (error) {
-                      reject(error.message || "Failed to change role");
-                    }
-                  })
-                  .catch((error) => {
-                    reject("Network error or unexpected issue occurred");
-                  });
-              }),
+            async () => {
+              const { error } = await authClient.admin.setRole({
+                userId: customer.id,
+                role: newRole,
+              });
+              if (error) {
+                throw new Error(error.message || "Failed to change role");
+              }
+              setCustomers((previous) =>
+                previous.map((c) =>
+                  c.id === customer.id ? { ...c, role: newRole } : c,
+                ),
+              );
+            },
             {
               loading: "Changing role...",
-              success: `Role changed to ${result.role}`,
-              error: (err) => err || "Failed to change role",
+              success: `Role changed to ${newRole}`,
+              error: (err) => err?.message || err || "Failed to change role",
             },
           );
         }
@@ -481,79 +500,157 @@ export default function CustomersPage() {
   };
 
   const openProfileEdit = (customer) => {
+    const rawPhone =
+      !customer.phone || customer.phone === NO_PHONE ? "" : customer.phone;
+    const rawAvatar = customer.image || customer.avatar || "";
+    const currentName = (customer.name ?? "").trim();
+
     alert
       .prompt({
         title: "Edit Customer Profile",
-        description: `Edit the profile of ${customer.name}.`,
+        description: `Edit the profile of ${customer.name || customer.id}.`,
+        buttonText: "Save changes",
         fields: [
           {
             name: "name",
             label: "Name",
             type: "text",
-            defaultValue: customer.name,
+            defaultValue: currentName,
             required: true,
           },
           {
             name: "phone",
-            label: "Phone",
+            label: "Phone (international format)",
             type: "tel",
-            defaultValue: customer.phone,
+            defaultValue: rawPhone,
+            placeholder: "+91 9876543210",
             required: false,
           },
           {
             name: "avatar",
             label: "Avatar URL",
             type: "text",
-            defaultValue: customer.image,
+            defaultValue: rawAvatar,
+            placeholder: "https://…",
             required: false,
           },
           {
             name: "isActive",
-            label: "Active Status",
+            label: "Active status",
             type: "checkbox",
-            defaultValue: !!customer.isActive,
+            defaultValue: customer.isActive !== false,
           },
         ],
         schema: z.object({
           name: z
             .string()
-            .min(3, "Name is required and must be at least 3 characters long"),
-          phone: z.string().optional(),
-          avatar: z.string().url("Invalid avatar URL").optional(),
+            .trim()
+            .min(3, "Name must be at least 3 characters long")
+            .max(80, "Name must be 80 characters or fewer"),
+          phone: z
+            .string()
+            .optional()
+            .refine(
+              (value) => isValidAdminPhone(value),
+              "Enter a valid phone number, e.g. +91 9876543210",
+            ),
+          avatar: z
+            .string()
+            .optional()
+            .refine(
+              (value) => !value || /^https?:\/\/\S+$/i.test(value.trim()),
+              "Avatar must be a valid http(s) URL",
+            ),
           isActive: z.boolean().optional(),
         }),
       })
-      .then(function (result) {
-        // check if the result is valid and different from the current customer data
-        const isDifferent = Object.keys(result).some((key) => {
-          return result[key] !== customer[key];
-        });
-        if (result && isDifferent) {
-          toast.promise(
-            () =>
-              new Promise(async (resolve, reject) => {
-                usersApi
-                  .update(customer.id, {
-                    name: result.name,
-                    phone: result.phone,
-                    avatar: result.avatar,
-                    isActive: result.isActive,
-                  })
-                  .then((result) => {
-                    console.log("Profile update result:", result);
-                    resolve();
-                  })
-                  .catch((error) => {
-                    reject("Network error or unexpected issue occurred");
-                  });
-              }),
-            {
-              loading: "Updating profile...",
-              success: "Profile updated successfully",
-              error: (err) => err || "Failed to update profile",
-            },
-          );
+      .then(async (result) => {
+        if (!result) return;
+
+        const nextName = String(result.name ?? "").trim();
+        const nextPhone = normalizeAdminPhone(result.phone);
+        const nextAvatar = String(result.avatar ?? "").trim();
+        const nextActive = Boolean(result.isActive);
+
+        const payload = {};
+        if (nextName && nextName !== currentName) payload.name = nextName;
+        if (nextPhone !== normalizeAdminPhone(rawPhone)) {
+          /* Empty string intentionally clears the stored phone. */
+          payload.phone = nextPhone;
         }
+        if (nextAvatar !== rawAvatar) payload.avatar = nextAvatar;
+        if (nextActive !== (customer.isActive !== false)) {
+          payload.isActive = nextActive;
+        }
+
+        if (!Object.keys(payload).length) {
+          toast.info("No changes to save");
+          return;
+        }
+
+        try {
+          await toast
+            .promise(() => usersApi.update(customer.id, payload), {
+              loading: "Updating profile…",
+              success: "Profile updated successfully",
+              error: (error) =>
+                error?.response?.data?.message ||
+                error?.response?.data?.error ||
+                error?.message ||
+                "Failed to update profile",
+            })
+            .unwrap();
+
+          const updated = (
+            await usersApi.get(customer.id).catch(() => null)
+          ) ?? {};
+
+          const merged = {
+            ...customer,
+            name: decryptField(updated.name) || nextName || customer.name,
+            phone: decryptField(updated.phoneNumber) || nextPhone || NO_PHONE,
+            image:
+              decrypt(updated.image) ?? nextAvatar ?? customer.image ?? "",
+            avatar: decrypt(updated.image) ?? nextAvatar ?? customer.avatar,
+            isActive:
+              typeof updated.isActive === "boolean"
+                ? updated.isActive
+                : nextActive,
+            status:
+              (typeof updated.isActive === "boolean"
+                ? updated.isActive
+                : nextActive)
+                ? "active"
+                : "inactive",
+          };
+
+          setCustomers((previous) =>
+            previous.map((item) =>
+              item.id === customer.id ? { ...item, ...merged } : item,
+            ),
+          );
+          setSelectedCustomer((previous) =>
+            previous?.id === customer.id ? { ...previous, ...merged } : previous,
+          );
+          setProfileDetail((previous) =>
+            previous
+              ? {
+                  ...previous,
+                  name: merged.name,
+                  phoneNumber:
+                    merged.phone === NO_PHONE ? "" : merged.phone,
+                  image: merged.image,
+                  isActive: merged.isActive,
+                }
+              : previous,
+          );
+          setRefreshKey((value) => value + 1);
+        } catch {
+          /* toast.promise already surfaced the failure. */
+        }
+      })
+      .catch(() => {
+        /* Prompt rejected (dialog closed) — nothing to do. */
       });
   };
 
@@ -565,28 +662,24 @@ export default function CustomersPage() {
       onClose: (confirmed) => {
         if (confirmed === true) {
           toast.promise(
-            new Promise(async (resolve, reject) => {
-              try {
-                const { data, error } = await authClient.admin.removeUser({
-                  userId: customer.id,
-                });
+            async () => {
+              const { data, error } = await authClient.admin.removeUser({
+                userId: customer.id,
+              });
 
-                if (error) {
-                  reject(error.message || "Failed to delete customer");
-                } else {
-                  resolve(data);
-                  setCustomers((prev) =>
-                    prev.filter((c) => c.id !== customer.id),
-                  );
-                }
-              } catch (error) {
-                reject(error.message || "Failed to delete customer");
+              if (error) {
+                throw new Error(error.message || "Failed to delete customer");
               }
-            }),
+
+              setCustomers((prev) =>
+                prev.filter((c) => c.id !== customer.id),
+              );
+              return data;
+            },
             {
               loading: "Deleting customer...",
               success: "Customer deleted successfully",
-              error: (err) => err || "Failed to delete customer",
+              error: (err) => err?.message || err || "Failed to delete customer",
             },
           );
         } else {

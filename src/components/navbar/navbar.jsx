@@ -2,13 +2,14 @@ import { Button } from "@/components/ui/button";
 import { Logo } from "../logo";
 import { NavMenu } from "./nav-menu";
 import { NavigationSheet } from "./navigation-sheet";
-import { SunIcon, MoonIcon } from "lucide-react";
+import { SunIcon, MoonIcon, LayoutDashboard } from "lucide-react";
 import { Link } from "react-router-dom";
 import { useTheme } from "@/utils/theme-provider";
 import AvatarMenu from "../avatar-menu";
 import { useTranslation } from "react-i18next";
 import { useUserSession } from "@/contexts/user-session-context";
 import { Skeleton } from "../ui/skeleton";
+import { isStaffRole } from "@shared/utils/roles";
 
 const NavbarBlock = () => {
   const { setTheme, theme } = useTheme();
@@ -16,6 +17,11 @@ const NavbarBlock = () => {
 
   const { data, isPending } = useUserSession();
   const user = data?.user;
+
+  /* Quick admin-console entry for staff accounts only. Shoppers
+   * ("user" / legacy "customer") and guests never see it. */
+  const canOpenAdmin =
+    Boolean(user) && !user.isAnonymous && isStaffRole(user.role);
 
   return (
     <nav className="h-16 bg-background border-b sticky top-0 z-50 w-full">
@@ -28,6 +34,25 @@ const NavbarBlock = () => {
         </div>
 
         <div className="flex items-center gap-2 sm:gap-3">
+          {canOpenAdmin ? (
+            <Button
+              asChild
+              size="icon"
+              variant="outline"
+              aria-label={t("nav.adminPanel", {
+                defaultValue: "Open admin panel",
+              })}
+              title={t("nav.adminPanel", {
+                defaultValue: "Open admin panel",
+              })}
+              className="shrink-0"
+            >
+              <Link to="/auth/admin/dashboard">
+                <LayoutDashboard className="h-4 w-4" />
+              </Link>
+            </Button>
+          ) : null}
+
           {/* theme button */}
           <Button
             size="icon"

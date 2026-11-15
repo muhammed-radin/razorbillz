@@ -16,6 +16,7 @@ import {
   unregisterStreamClient,
   writeSseEvent,
 } from "../utils/liveEvents.js";
+import { flushArchive, readRecentArchive } from "../utils/liveEventsArchive.js";
 
 const router = express.Router();
 
@@ -176,6 +177,47 @@ router.get(
     res.json(getLiveSnapshot({ limit, windowMinutes }));
   },
 );
+
+/* =========================================================
+ * Encrypted rolling 24h archive (events + requests + DB CRUD)
+ * ---------------------------------------------------------
+ * Loaded by the client BEFORE it opens the SSE connection so the
+ * live and history tabs have a complete 24h baseline.
+ * ========================================================= */
+router.get("/recent", ...ownerOnly, async (req, res) => {
+  const eventLimit = clampInt(
+    req.query.events ?? req.query.limit,
+    2_000,
+    1,
+    10_000,
+  );
+  const requestLimit = clampInt(req.query.requests, 1_000, 1, 5_000);
+  const dbLimit = clampInt(req.query.db, 1_000, 1, 5_000);
+
+  try {
+    await flushArchive();
+    const data = await readRecentArchive({
+      limits: {
+        events: eventLimit,
+        requests: requestLimit,
+        db: dbLimit,
+      },
+    });
+
+    res.set("Cache-Control", "no-store");
+    res.json({
+      ...data,
+      counts: {
+        events: data.events.length,
+        requests: data.requests.length,
+        db: data.db.length,
+      },
+    });
+  } catch (error) {
+    console.error("[live-events] recent archive failed:", error?.message);
+    res.status(500).json({ error: "Failed to load recent telemetry." });
+  }
+});
 
 /* =========================================================
  * Persisted (past) activity records

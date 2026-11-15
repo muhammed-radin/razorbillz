@@ -260,10 +260,13 @@ function wrapMethod(method, bound) {
 export function buildMirrorUserFields(userLike) {
   const set = {};
 
-  for (const [field, purpose, context] of [
-    ["email", "email", "email:email"],
-    ["name", "name", "user:name"],
-    ["phoneNumber", "phone", "user:phoneNumber"],
+  /* `field` is the stored field name, `indexName` is the blind-index
+   * family name used by the query layer (the mirror schema stores the
+   * phone tokens as `phone_idx`/`phone_prefix`/`phone_grams`). */
+  for (const [field, purpose, context, indexName] of [
+    ["email", "email", "email:email", "email"],
+    ["name", "name", "user:name", "name"],
+    ["phoneNumber", "phone", "user:phoneNumber", "phone"],
   ]) {
     const raw = userLike[field] ?? userLike[purpose];
     if (typeof raw !== "string" || raw === "") continue;
@@ -273,7 +276,7 @@ export function buildMirrorUserFields(userLike) {
     set[field] = encryptField(opened, { context });
     Object.assign(
       set,
-      advancedPIIIdx({ [field]: opened }, { [field]: purpose }),
+      advancedPIIIdx({ [indexName]: opened }, { [indexName]: purpose }),
     );
   }
 

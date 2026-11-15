@@ -5,21 +5,78 @@ import {
   requireAuth,
 } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
-import createAuth, { getAuthInstance } from "../utils/auth.js";
+import { getAuthInstance } from "../utils/auth.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
 import settingsRouter from "./settings.js";
 import {
-  encrypt,
+  encryptField,
   decryptField,
   decryptAddress,
   decryptAddressBook,
-  isEncrypted,
-  advancedPIIIdx,
   searchTokens,
 } from "../utils/crypto/index.js";
+import { buildMirrorUserFields } from "../utils/crypto/emailVault.js";
 import { isAPIError } from "better-auth/api";
 
 const router = express.Router();
+
+/* Incoming profile values may be plaintext (admin forms) or already
+ * sealed/legacy-encrypted (settings page sends legacy ciphertext).
+ * Normalise to plaintext before re-sealing so we never double-wrap. */
+function openPII(value) {
+  if (typeof value !== "string" || value === "") return value;
+  const opened = decryptField(value);
+  return typeof opened === "string" ? opened : value;
+}
+
+const PHONE_INDEX_KEYS = [
+  "phoneNumber",
+  "phone_idx",
+  "phone_prefix",
+  "phone_grams",
+  /* Legacy writers used the sealed field name for the token family. */
+  "phoneNumber_idx",
+  "phoneNumber_prefix",
+  "phoneNumber_grams",
+];
+
+/* Build the mirror-collection patch for fields that Better Auth does
+ * not own. `phoneNumber` is NOT a Better Auth user field, which is why
+ * sending it alone to updateUser() produced "No fields to update". */
+function buildMirrorUpdate({ name, phone, image, isActive }) {
+  const set = {};
+  const unset = {};
+
+  if (typeof name === "string" && name.trim()) {
+    Object.assign(set, buildMirrorUserFields({ name: name.trim() }));
+  }
+
+  if (typeof phone === "string") {
+    const trimmed = phone.trim();
+    if (trimmed) {
+      Object.assign(set, buildMirrorUserFields({ phoneNumber: trimmed }));
+    } else {
+      for (const key of PHONE_INDEX_KEYS) unset[key] = "";
+    }
+  }
+
+  if (typeof image === "string") {
+    if (image.trim()) {
+      Object.assign(set, buildMirrorUserFields({ image: image.trim() }));
+    } else {
+      unset.image = "";
+      unset.profilePicture = "";
+    }
+  }
+
+  if (typeof isActive === "boolean") set.isActive = isActive;
+
+  if (Object.keys(set).length || Object.keys(unset).length) {
+    set.updatedAt = new Date().toISOString();
+  }
+
+  return { set, unset };
+}
 
 /* Address snapshots (users.address + users.addressBook[]) are sealed
  * at rest (envelope AES-GCM, server-only key). Decrypt-on-read at
@@ -66,12 +123,15 @@ router.get("/profile", requireAuth, passUserAuth, async (req, res) => {
     delete decrypted.name_idx;
     delete decrypted.email_idx;
     delete decrypted.phone_idx;
+    delete decrypted.phoneNumber_idx;
     delete decrypted.name_prefix;
     delete decrypted.name_grams;
     delete decrypted.email_prefix;
     delete decrypted.email_grams;
     delete decrypted.phone_prefix;
     delete decrypted.phone_grams;
+    delete decrypted.phoneNumber_prefix;
+    delete decrypted.phoneNumber_grams;
 
     res.json(decrypted);
   } catch (err) {
@@ -90,23 +150,66 @@ router.post("/profile", requireAuth, passUserAuth, async (req, res) => {
 
     const { name, avatar, phone } = req.body;
 
-    const updateFields = {};
-    if (name) updateFields.name = encrypt(name);
-    if (avatar) {
-      updateFields.image = encrypt(avatar);
-      updateFields.profilePicture = encrypt(avatar);
-    }
-    if (phone) updateFields.phoneNumber = encrypt(phone);
-    /* vaulted mirror tokens are rebuilt by the databaseHooks.user.update
-     * after-hook (buildMirrorUserFields) — writes here stay minimal. */
+    const plainName = typeof name === "string" ? openPII(name).trim() : "";
+    const plainAvatar =
+      typeof avatar === "string" ? openPII(avatar).trim() : undefined;
+    const plainPhone =
+      typeof phone === "string" ? openPII(phone).trim() : undefined;
 
-    const result = await getAuthInstance().api.updateUser({
-      query: { id: userId },
-      body: updateFields,
-      headers: req.headers,
+    /* Better Auth only accepts fields it knows about. Send name/image
+     * there, but persist phoneNumber in the mirror collection. */
+    const authFields = {};
+    if (plainName) {
+      authFields.name = encryptField(plainName, { context: "user:name" });
+    }
+    if (plainAvatar !== undefined) {
+      authFields.image = plainAvatar
+        ? encryptField(plainAvatar, { context: "user:image" })
+        : "";
+      authFields.profilePicture = authFields.image;
+    }
+    authFields.updatedAt = new Date().toISOString();
+
+    const hasAuthFields = Boolean(plainName) || plainAvatar !== undefined;
+    const mirror = buildMirrorUpdate({
+      name: plainName,
+      image: plainAvatar,
+      phone: plainPhone,
     });
 
-    res.json({ message: "Profile updated successfully", result });
+    if (!hasAuthFields && !Object.keys(mirror.set).length && !Object.keys(mirror.unset).length) {
+      return res.status(400).json({
+        success: false,
+        error: "No fields to update",
+        message: "Provide at least one profile field to update.",
+      });
+    }
+
+    let result = null;
+    if (hasAuthFields) {
+      result = await getAuthInstance().api.updateUser({
+        query: { id: userId },
+        body: authFields,
+        headers: req.headers,
+      });
+    }
+
+    const mirrorUpdate = {};
+    if (Object.keys(mirror.set).length) mirrorUpdate.$set = mirror.set;
+    if (Object.keys(mirror.unset).length) mirrorUpdate.$unset = mirror.unset;
+    if (Object.keys(mirrorUpdate).length) {
+      await db.collection("users").updateOne({ id: userId }, mirrorUpdate);
+    }
+
+    res.json({
+      message: "Profile updated successfully",
+      result,
+      user: {
+        name: plainName || undefined,
+        phoneNumber: plainPhone,
+        image: plainAvatar,
+      },
+    });
   } catch (error) {
     // FAILURE: An error was thrown
 
@@ -186,19 +289,28 @@ router.get(
 
       const orBranches = [{ name: rx }, { email: rx }, { id: rx }];
       if (adv) {
+        /* Older rows stored phone tokens under the sealed field name
+         * (`phoneNumber_*`); query both families until reindexed. */
+        const families = {
+          name: ["name"],
+          email: ["email"],
+          phone: ["phone", "phoneNumber"],
+        };
         for (const [field, tokens] of Object.entries(adv)) {
           if (!tokens) continue;
-          if (tokens.eq) {
-            orBranches.push({ [`${field}_idx`]: tokens.eq });
-          }
-          if (tokens.prefix) {
-            orBranches.push({ [`${field}_prefix`]: tokens.prefix });
-          }
-          if (tokens.grams.length) {
-            // Only reachable for queries >= 3 chars — searchTokens
-            // emits NO grams below GRAM_SIZE (substring minimum).
-            orBranches.push({ [`${field}_grams`]: { $all: tokens.grams } });
-            needsGramsFilter = true; // trigram may over-match → post-filter
+          for (const family of families[field] ?? [field]) {
+            if (tokens.eq) {
+              orBranches.push({ [`${family}_idx`]: tokens.eq });
+            }
+            if (tokens.prefix) {
+              orBranches.push({ [`${family}_prefix`]: tokens.prefix });
+            }
+            if (tokens.grams.length) {
+              // Only reachable for queries >= 3 chars — searchTokens
+              // emits NO grams below GRAM_SIZE (substring minimum).
+              orBranches.push({ [`${family}_grams`]: { $all: tokens.grams } });
+              needsGramsFilter = true; // trigram may over-match → post-filter
+            }
           }
         }
       }
@@ -260,12 +372,15 @@ router.get(
             "name_idx",
             "email_idx",
             "phone_idx",
+            "phoneNumber_idx",
             "name_prefix",
             "name_grams",
             "email_prefix",
             "email_grams",
             "phone_prefix",
             "phone_grams",
+            "phoneNumber_prefix",
+            "phoneNumber_grams",
             "password",
             "token",
           ]) {
@@ -325,12 +440,15 @@ router.get(
         "name_idx",
         "email_idx",
         "phone_idx",
+        "phoneNumber_idx",
         "name_prefix",
         "name_grams",
         "email_prefix",
         "email_grams",
         "phone_prefix",
         "phone_grams",
+        "phoneNumber_prefix",
+        "phoneNumber_grams",
       ]) {
         delete clean[k];
       }
@@ -433,31 +551,107 @@ router.put(
   async (req, res) => {
     try {
       const userId = req.params.id;
-      const { name, avatar, image, profilePicture, phone, isActive } = req.body;
+      const {
+        name,
+        avatar,
+        image,
+        profilePicture,
+        phone,
+        isActive,
+      } = req.body ?? {};
 
-      const updateFields = {};
-      if (name) updateFields.name = encrypt(name);
-      if (avatar)
-        updateFields.image = encrypt(avatar || image || profilePicture);
-      if (avatar)
-        updateFields.profilePicture = encrypt(
-          avatar || image || profilePicture,
-        );
-      if (phone) updateFields.phoneNumber = encrypt(phone);
-      if (typeof isActive === "boolean") updateFields.isActive = isActive;
+      const avatarInput =
+        typeof avatar === "string"
+          ? avatar
+          : typeof image === "string"
+            ? image
+            : typeof profilePicture === "string"
+              ? profilePicture
+              : undefined;
 
-      updateFields.updatedAt = new Date().toISOString();
+      const plainName = typeof name === "string" ? openPII(name).trim() : "";
+      const plainAvatar =
+        avatarInput !== undefined ? openPII(avatarInput).trim() : undefined;
+      const plainPhone =
+        typeof phone === "string" ? openPII(phone).trim() : undefined;
 
-      const result = await getAuthInstance().api.updateUser({
-        query: { id: userId },
-        body: updateFields,
-        headers: req.headers,
+      /* Better Auth owns name/image; phone + isActive live in the
+       * mirror collection. Passing phoneNumber to updateUser() was a
+       * no-op (or a 400 when it was the only field). */
+      const authFields = {};
+      if (plainName) {
+        authFields.name = encryptField(plainName, { context: "user:name" });
+      }
+      if (plainAvatar !== undefined) {
+        authFields.image = plainAvatar
+          ? encryptField(plainAvatar, { context: "user:image" })
+          : "";
+        authFields.profilePicture = authFields.image;
+      }
+      authFields.updatedAt = new Date().toISOString();
+
+      const hasAuthFields = Boolean(plainName) || plainAvatar !== undefined;
+      const mirror = buildMirrorUpdate({
+        name: plainName,
+        image: plainAvatar,
+        phone: plainPhone,
+        isActive,
       });
+
+      if (
+        !hasAuthFields &&
+        !Object.keys(mirror.set).length &&
+        !Object.keys(mirror.unset).length
+      ) {
+        return res.status(400).json({
+          success: false,
+          message: "No fields to update",
+          error: "Provide at least one user field to update.",
+        });
+      }
+
+      const existing = await db.collection("users").findOne({ id: userId });
+      if (!existing) {
+        return res.status(404).json({
+          success: false,
+          message: "User not found",
+        });
+      }
+
+      let result = null;
+      if (hasAuthFields) {
+        /* Admin edits target another account, so use the admin API
+         * (`updateUser` would update the admin's own session user). */
+        result = await getAuthInstance().api.adminUpdateUser({
+          body: { userId, data: authFields },
+          headers: req.headers,
+        });
+      }
+
+      const mirrorUpdate = {};
+      if (Object.keys(mirror.set).length) mirrorUpdate.$set = mirror.set;
+      if (Object.keys(mirror.unset).length) mirrorUpdate.$unset = mirror.unset;
+      if (Object.keys(mirrorUpdate).length) {
+        await db.collection("users").updateOne({ id: userId }, mirrorUpdate);
+      }
+
+      const updated = await db.collection("users").findOne({ id: userId });
 
       res.status(200).json({
         success: true,
         message: "User profile updated successfully",
         result,
+        user: updated
+          ? {
+              id: updated.id,
+              name: decryptField(updated.name),
+              phoneNumber: decryptField(updated.phoneNumber),
+              image: decryptField(updated.image),
+              isActive: updated.isActive,
+              banned: updated.banned,
+              role: updated.role,
+            }
+          : null,
       });
     } catch (error) {
       // FAILURE: An error was thrown

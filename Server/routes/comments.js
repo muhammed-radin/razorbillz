@@ -1,12 +1,17 @@
 import express from "express";
 import { db } from "../utils/db.js";
 import {
-  passUserAuth,
   requireAuth,
   requireSession,
 } from "../utils/middlewares/reqiuredAuth.js";
 import { CommentModel } from "../models/schema/comments.js";
+import { CounterModel } from "../models/schema/counters.js";
 import { evt, Evts, ErrorEvent, CommentEvent } from "../utils/events.manage.js";
+import {
+  clearCommentLikeDelta,
+  getPendingCommentLikeDelta,
+  queueCommentLikeDelta,
+} from "../utils/commentLikes.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
 import { productMemoryCache } from "../utils/cache-utils/product-data.js";
 import { productFeedCache } from "../utils/cache-utils/product-feed.js";
@@ -135,7 +140,7 @@ function decryptComment(comment) {
  * POST /comments — create or update the user's review
  * ========================================================= */
 
-router.post("/", requireAuth, passUserAuth, async (req, res) => {
+router.post("/", requireAuth, async (req, res) => {
   const { productId, content: commentText, rating } = req.body ?? {};
   const { id: userId, email, name, image: avatar } = req.user;
 
@@ -202,10 +207,120 @@ router.post("/", requireAuth, passUserAuth, async (req, res) => {
 });
 
 /* =========================================================
+ * POST /comments/:commentId/like — toggle the viewer's like
+ * ---------------------------------------------------------
+ * The `counters` row is the source of truth for WHO liked WHAT
+ * (unique refId+userId). The aggregate `comments.likes` count is
+ * buffered through utils/commentLikes.js so bursts of toggles do
+ * not translate into one document write per click.
+ * ========================================================= */
+
+async function setLikeState({ commentId, userId, liked }) {
+  const filter = { refId: commentId, userId, type: "comment_like" };
+  const existing = await CounterModel.findOne(filter).lean();
+
+  if (!existing) {
+    if (!liked) return false;
+    try {
+      await CounterModel.create({
+        _id: `${commentId}_${userId}`,
+        refId: commentId,
+        userId,
+        type: "comment_like",
+        active: true,
+      });
+      return true;
+    } catch (error) {
+      if (error?.code !== 11000) throw error;
+      const raced = await CounterModel.updateOne(
+        { ...filter, active: false },
+        { $set: { active: true, updatedAt: new Date() } },
+      );
+      return raced.modifiedCount > 0;
+    }
+  }
+
+  if (Boolean(existing.active) === liked) return false;
+
+  const changed = await CounterModel.updateOne(
+    { _id: existing._id, active: existing.active },
+    { $set: { active: liked, updatedAt: new Date() } },
+  );
+  return changed.modifiedCount > 0;
+}
+
+router.post("/:commentId/like", requireAuth, async (req, res) => {
+  const commentId = String(req.params.commentId || "");
+  const userId = req.user?.id;
+
+  if (!commentId || !userId) {
+    return res.status(400).json({ error: "Comment ID is required" });
+  }
+
+  if (!/^[a-f0-9]{24}$/i.test(commentId)) {
+    return res.status(400).json({ error: "Invalid comment ID" });
+  }
+
+  try {
+    const comment = await CommentModel.findById(commentId).lean();
+    if (!comment) {
+      return res.status(404).json({ error: "Comment not found" });
+    }
+
+    const existing = await CounterModel.findOne({
+      refId: commentId,
+      userId,
+      type: "comment_like",
+    }).lean();
+    const liked = !existing?.active;
+
+    const changed = await setLikeState({ commentId, userId, liked });
+    if (changed) {
+      queueCommentLikeDelta(commentId, liked ? 1 : -1);
+    }
+
+    /* Re-read the baseline so deltas flushed between the first read
+     * and now are not lost; pending (unflushed) deltas are added on
+     * top instead of recounting the whole Counter collection. */
+    const baseline =
+      (await CommentModel.findById(commentId, { likes: 1 }).lean())?.likes ??
+      comment.likes ??
+      0;
+    const likes = Math.max(
+      0,
+      Number(baseline || 0) + getPendingCommentLikeDelta(commentId),
+    );
+
+    if (changed) {
+      invalidateCommentCaches(comment.productId);
+      evt.fire(
+        Evts.PRODUCT_COMMENT_LIKED,
+        new CommentEvent({
+          type: Evts.PRODUCT_COMMENT_LIKED,
+          comment: {
+            id: commentId,
+            productId: comment.productId,
+            userId,
+            likes,
+            liked,
+          },
+        }),
+      );
+    }
+
+    return res.json({ commentId, liked, likes, changed });
+  } catch (error) {
+    reportError(error, { commentId, userId });
+    console.error("Error toggling comment like:", error);
+    return res.status(500).json({ error: "Failed to update comment like" });
+  }
+});
+
+/* =========================================================
  * GET /comments/:productId
  * ========================================================= */
 
-router.get("/:productId", requireSession, passUserAuth, async (req, res) => {
+router.get("/:productId", requireSession, async (req, res) => {
   const productId = req.params.productId;
 
   // Authenticated user ID, or null for guests
@@ -265,8 +380,36 @@ router.get("/:productId", requireSession, passUserAuth, async (req, res) => {
 
     const totalPages = Math.ceil(totalCount / limit);
 
+    /* One counter query for the whole page: viewer-specific liked
+     * state without an N+1 lookup per comment. Buffered deltas are
+     * added so the count is current even before the next flush. */
+    const commentIds = comments.map((comment) => String(comment._id));
+    let likedIds = new Set();
+    if (userId && commentIds.length) {
+      const likes = await CounterModel.find(
+        {
+          refId: { $in: commentIds },
+          userId,
+          type: "comment_like",
+          active: true,
+        },
+        { refId: 1, _id: 0 },
+      ).lean();
+      likedIds = new Set(likes.map((row) => String(row.refId)));
+    }
+
     results = {
-      comments: comments.map(decryptComment),
+      comments: comments.map((comment) => {
+        const id = String(comment._id);
+        return {
+          ...decryptComment(comment),
+          likes: Math.max(
+            0,
+            Number(comment.likes || 0) + getPendingCommentLikeDelta(id),
+          ),
+          liked: likedIds.has(id),
+        };
+      }),
       page,
       limit,
       count: totalCount,
@@ -306,7 +449,7 @@ router.get("/:productId", requireSession, passUserAuth, async (req, res) => {
  * PUT /comments/:productId — edit the user's review
  * ========================================================= */
 
-router.put("/:productId", requireAuth, passUserAuth, async (req, res) => {
+router.put("/:productId", requireAuth, async (req, res) => {
   const productId = req.params.productId;
   const { content: commentText, rating } = req.body ?? {};
   const { id: userId } = req.user;
@@ -354,7 +497,7 @@ router.put("/:productId", requireAuth, passUserAuth, async (req, res) => {
  * DELETE /comments/:productId — delete the user's review
  * ========================================================= */
 
-router.delete("/:productId", requireAuth, passUserAuth, async (req, res) => {
+router.delete("/:productId", requireAuth, async (req, res) => {
   const productId = req.params.productId;
   const { id: userId } = req.user;
 
@@ -370,6 +513,8 @@ router.delete("/:productId", requireAuth, passUserAuth, async (req, res) => {
 
     invalidateCommentCaches(productId);
     await bumpCommentCount(productId, -1);
+    clearCommentLikeDelta(deletedComment._id);
+    await CounterModel.deleteMany({ refId: String(deletedComment._id) });
 
     evt.fire(
       Evts.PRODUCT_COMMENT_DELETED,
@@ -404,6 +549,10 @@ evt.on(Evts.PRODUCT_COMMENT_UPDATED, ({ comment } = {}) => {
 });
 
 evt.on(Evts.PRODUCT_COMMENT_DELETED, ({ comment } = {}) => {
+  if (comment?.productId) invalidateCommentCaches(comment.productId);
+});
+
+evt.on(Evts.PRODUCT_COMMENT_LIKED, ({ comment } = {}) => {
   if (comment?.productId) invalidateCommentCaches(comment.productId);
 });
 

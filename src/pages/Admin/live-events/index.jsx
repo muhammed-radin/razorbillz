@@ -147,6 +147,93 @@ function mergeNewest(previous, incoming, max = 300) {
   return [...fresh, ...previous].slice(0, max);
 }
 
+/* Merge two newest-first collections (archive + snapshot). */
+function mergeNewestFirst(previous, incoming, max = 500) {
+  if (!Array.isArray(incoming) || !incoming.length) return previous;
+
+  const combined = [...incoming, ...(previous ?? [])];
+  const seen = new Set();
+  const out = [];
+
+  for (const item of combined) {
+    if (!item) continue;
+    const key =
+      item.id ??
+      [
+        item.timestamp ?? "",
+        item.type ?? item.method ?? item.operation ?? item.collection ?? "",
+        item.path ?? item.title ?? item.message ?? "",
+      ].join("|");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+
+  return out
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp))
+    .slice(0, max);
+}
+
+function archiveEventKey(event) {
+  return [
+    event?.type ?? "",
+    event?.timestamp ?? "",
+    event?.title ?? event?.message ?? event?.path ?? "",
+  ].join("|");
+}
+
+function filterArchiveMinorEvents(events, filters) {
+  if (!Array.isArray(events) || !events.length) return [];
+  if (filters.major) return [];
+
+  const type = filters.type.trim();
+  const search = filters.search.trim().toLowerCase();
+
+  return events
+    .filter((event) => {
+      /* Persisted records already cover major events; the archive is
+       * what supplies the last 24h of minor activity. */
+      if (event.isMajor) return false;
+      if (filters.sector && event.sector !== filters.sector) return false;
+      if (type && event.type !== type) return false;
+      if (filters.errors && !event.isError) return false;
+      if (search) {
+        const haystack = [event.type, event.title, event.message, event.path]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        if (!haystack.includes(search)) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp));
+}
+
+function mergePastEvents(previous, incoming, minorEvents, append) {
+  const combined = append
+    ? [...(previous ?? []), ...(incoming ?? []), ...minorEvents]
+    : [...minorEvents, ...(incoming ?? [])];
+
+  const seenIds = new Set();
+  const seenContent = new Set();
+  const out = [];
+  for (const event of combined) {
+    if (!event) continue;
+
+    const contentKey = archiveEventKey(event);
+    if (event.id && seenIds.has(event.id)) continue;
+    if (seenContent.has(contentKey)) continue;
+
+    if (event.id) seenIds.add(event.id);
+    seenContent.add(contentKey);
+    out.push(event);
+  }
+
+  return out.sort(
+    (a, b) => Date.parse(b.timestamp) - Date.parse(a.timestamp),
+  );
+}
+
 function StatCard({ title, value, hint, icon, tone }) {
   const Icon = icon;
 
@@ -589,19 +676,31 @@ function LiveEventsDashboard() {
   const [pastError, setPastError] = useState(null);
   const [pastSummary, setPastSummary] = useState(null);
 
+  /* Encrypted 24h archive is loaded BEFORE the SSE connection opens so
+   * both tabs start from a complete baseline. */
+  const [recentArchive, setRecentArchive] = useState(null);
+  const [archiveReady, setArchiveReady] = useState(false);
+  const [archiveError, setArchiveError] = useState(null);
+
   const applySnapshot = useCallback((data, replaceRecent) => {
     if (!data) return;
     setSnapshot(data);
 
     if (!replaceRecent) return;
     if (Array.isArray(data.events?.recent)) {
-      setLiveEvents(data.events.recent);
+      setLiveEvents((previous) =>
+        mergeNewestFirst(previous, data.events.recent, 500),
+      );
     }
     if (Array.isArray(data.requests?.recent)) {
-      setLiveRequests(data.requests.recent);
+      setLiveRequests((previous) =>
+        mergeNewestFirst(previous, data.requests.recent, 500),
+      );
     }
     if (Array.isArray(data.db?.recent)) {
-      setLiveDbOps(data.db.recent);
+      setLiveDbOps((previous) =>
+        mergeNewestFirst(previous, data.db.recent, 500),
+      );
     }
   }, []);
 
@@ -630,8 +729,48 @@ function LiveEventsDashboard() {
     [applySnapshot],
   );
 
+  useStrictFetchEffect(
+    async (signal) => {
+      try {
+        const data = await liveEventsApi.recent(
+          { events: 2000, requests: 500, db: 500 },
+          { signal, timeout: 15000 },
+        );
+        if (signal.aborted) return;
+        setRecentArchive({
+          events: data.events ?? [],
+          requests: data.requests ?? [],
+          db: data.db ?? [],
+        });
+        /* Seed the live tab with the full 24h archive; the SSE
+         * snapshot only carries the in-memory window. */
+        setLiveEvents((previous) =>
+          mergeNewestFirst(previous, data.events ?? [], 500),
+        );
+        setLiveRequests((previous) =>
+          mergeNewestFirst(previous, data.requests ?? [], 500),
+        );
+        setLiveDbOps((previous) =>
+          mergeNewestFirst(previous, data.db ?? [], 500),
+        );
+        setArchiveError(null);
+      } catch (error) {
+        if (signal.aborted) return;
+        setArchiveError(
+          error?.response?.status === 403
+            ? "Owner permission is required for the telemetry archive."
+            : "Could not load the last 24h telemetry archive.",
+        );
+        setRecentArchive({ events: [], requests: [], db: [] });
+      } finally {
+        if (!signal.aborted) setArchiveReady(true);
+      }
+    },
+    [],
+  );
+
   const stream = useLiveEventsStream({
-    enabled: true,
+    enabled: archiveReady,
     onMessage: handleStreamMessage,
   });
 
@@ -666,6 +805,11 @@ function LiveEventsDashboard() {
     return () => clearTimeout(timer);
   }, [draftFilters]);
 
+  const archiveMinorEvents = useMemo(
+    () => filterArchiveMinorEvents(recentArchive?.events, filters),
+    [recentArchive, filters],
+  );
+
   const pastParams = useMemo(
     () => ({
       limit: 50,
@@ -692,10 +836,15 @@ function LiveEventsDashboard() {
 
         setPast((previous) => ({
           ...data,
-          events:
-            pastSkip === 0
-              ? data.events ?? []
-              : [...(previous.events ?? []), ...(data.events ?? [])],
+          events: mergePastEvents(
+            previous.events,
+            data.events,
+            archiveMinorEvents,
+            pastSkip !== 0,
+          ),
+          /* `data.total` is the full persisted count, not a running
+           * sum, so the archive contribution is added on every page. */
+          total: (Number(data.total) || 0) + archiveMinorEvents.length,
         }));
       } catch (error) {
         if (signal.aborted) return;
@@ -708,7 +857,7 @@ function LiveEventsDashboard() {
         if (!signal.aborted) setPastLoading(false);
       }
     },
-    [pastParams, activeTab, reloadKey],
+    [pastParams, activeTab, reloadKey, archiveMinorEvents],
   );
 
   useStrictFetchEffect(
@@ -817,6 +966,12 @@ function LiveEventsDashboard() {
         {stream.error ? (
           <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">
             {stream.error}
+          </div>
+        ) : null}
+
+        {archiveError ? (
+          <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3 text-xs text-amber-700 dark:text-amber-300">
+            {archiveError} Live data still streams from the in-memory window.
           </div>
         ) : null}
 

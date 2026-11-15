@@ -40,6 +40,7 @@ const {
   normalizePhone,
   normalizeText,
   prefixTokens,
+  wordPrefixTokens,
   gramTokens,
   searchTokens,
   eqToken,
@@ -191,6 +192,16 @@ test("prefix tokens: determinism, anchoring, ordering", () => {
   const mid = searchTokens("ahif", "name");
   if (mid.prefix) assert.ok(!a.includes(mid.prefix));
   assert.notEqual(q.prefix, mid.prefix);
+});
+
+test("word-prefix tokens match any word, not just the first", () => {
+  const stored = wordPrefixTokens("Rahif Muhammed", "name");
+  const secondWord = searchTokens("muh", "name");
+  assert.ok(secondWord.prefix);
+  assert.ok(stored.includes(secondWord.prefix));
+  // Still not a suffix/substring match.
+  const suffix = searchTokens("ammed", "name");
+  assert.ok(!stored.includes(suffix.prefix));
 });
 
 test("gram tokens: substring matching is complete (no false negatives)", () => {
@@ -376,10 +387,19 @@ test("emailVault: buildMirrorUserFields decrypts BA rows and rebuilds mirror tok
   const baRow = {
     email: sealString("mirror@example.com", { context: "email:email" }),
     name: "Mirror Name",
+    phoneNumber: "+91 9876543210",
   };
   const set = buildMirrorUserFields(baRow);
   assert.ok(set.email.startsWith("ze1."));
   assert.equal(decryptField(set.email), "mirror@example.com");
   assert.equal(set.email_idx, eqToken("mirror@example.com", "email"));
   assert.equal(decryptField(set.name), "Mirror Name");
+
+  // Phone tokens must use the `phone_*` family the query layer reads;
+  // Mongoose strict mode drops unknown `phoneNumber_*` keys.
+  assert.equal(decryptField(set.phoneNumber), "+91 9876543210");
+  assert.equal(set.phone_idx, eqToken("+91 9876543210", "phone"));
+  assert.ok(set.phone_prefix.includes(searchTokens("987", "phone").prefix));
+  assert.equal(set.phoneNumber_idx, undefined);
+  assert.equal(set.phoneNumber_prefix, undefined);
 });

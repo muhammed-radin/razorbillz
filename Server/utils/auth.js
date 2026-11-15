@@ -181,6 +181,7 @@ export default function createAuth(db) {
               "email", "email_idx", "email_prefix", "email_grams",
               "name", "name_idx", "name_prefix", "name_grams",
               "phoneNumber", "phone_idx", "phone_prefix", "phone_grams",
+              "phoneNumber_idx", "phoneNumber_prefix", "phoneNumber_grams",
               "image", "profilePicture",
             ]) {
               delete safeFields[key];

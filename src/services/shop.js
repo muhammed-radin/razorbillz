@@ -111,9 +111,13 @@ export const commentsApi = {
   list: (productId, params) => get(`/api/comments/${productId}`, { params }),
   create: (productId, content, rating) =>
     post("/api/comments", { productId, content, rating: rating ?? 0 }),
-  update: (productId, content) =>
-    put(`/api/comments/${productId}`, { content }),
+  update: (productId, content, rating) =>
+    put(`/api/comments/${productId}`, {
+      content,
+      rating: rating ?? 0,
+    }),
   remove: (productId) => del(`/api/comments/${productId}`),
+  toggleLike: (commentId) => post(`/api/comments/${commentId}/like`),
 };
 
 const visitedProducts = new Map();
@@ -188,6 +192,8 @@ export const analyticsApi = {
 export const liveEventsApi = {
   snapshot: (params, config) =>
     get("/api/live-events/snapshot", { ...config, params }),
+  recent: (params, config) =>
+    get("/api/live-events/recent", { ...config, params }),
   past: (params, config) =>
     get("/api/live-events/past", { ...config, params }),
   pastSummary: (params, config) =>
