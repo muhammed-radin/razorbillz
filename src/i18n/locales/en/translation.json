@@ -200,7 +200,9 @@
     "signInToSeeReviewsDesc": "Reviews are available to signed-in customers and guests.",
     "signIn": "Sign in",
     "signInToLike": "Sign in to like reviews",
-    "likeFailed": "Could not update this like. Please try again."
+    "likeFailed": "Could not update this like. Please try again.",
+    "alreadyReviewedTitle": "You've already reviewed this product",
+    "alreadyReviewedDesc": "Use the edit button on your review above to make changes."
   },
   "cart": {
     "title": "Shopping Cart",

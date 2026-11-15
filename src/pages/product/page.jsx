@@ -59,7 +59,6 @@ import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { useCartStore, useWishlistStore } from "@/stores/shop";
 import { interactionsApi, productsApi } from "@/services/shop";
-import { useUserSession } from "@/contexts/user-session-context";
 import { ReviewRatingSection } from "@/components/review/review-rating";
 import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
 import { useApiCacheStore } from "@/stores/apiCacheStore";
@@ -73,8 +72,6 @@ const ProductVideoPlayer = lazy(
 const ProductDetailsPage = () => {
   const { t } = useTranslation();
   const { id } = useParams();
-  const { data } = useUserSession();
-  const user = data?.user;
   const [selectedMedia, setSelectedMedia] = useState(0);
   const [quantity, setQuantity] = useState(1);
   const [product, setProduct] = useState(() => {
@@ -744,7 +741,7 @@ const ProductDetailsPage = () => {
                   <Separator className="my-2" />
                 </CardHeader>
                 <CardContent className="w-full">
-                  <ReviewRatingSection productId={id} userId={user?.id} />
+                  <ReviewRatingSection key={id} productId={id} />
                 </CardContent>
               </Card>
             </TabsContent>

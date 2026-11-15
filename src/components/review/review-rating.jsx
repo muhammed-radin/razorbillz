@@ -9,6 +9,7 @@ import {
   Pencil,
   Trash2,
   Lock,
+  CheckCircle2,
   MessageCircle,
   MessageSquare,
   Calendar,
@@ -130,18 +131,38 @@ export function ReviewRatingSection({ productId }) {
         )
         .then((payload) => {
           if (requestIdRef.current !== requestId) return payload?.reviews;
-          setRemoteReviews(payload?.reviews ?? []);
+          const loaded = payload?.reviews ?? [];
+          setRemoteReviews(loaded);
           setRemoteMeta({
             totalPages: Number(payload?.totalPages) || 0,
             count: Number(payload?.count) || 0,
           });
-          return payload?.reviews;
+          /* Own reviews are sorted first by the server, so page 1 is
+           * authoritative. On later pages we only ever upgrade to true. */
+          if (currentPage === 1) {
+            setHasOwnReview(
+              Boolean(
+                viewerId && loaded.some((review) => review.userId === viewerId),
+              ),
+            );
+            setOwnReviewResolved(true);
+          } else if (
+            viewerId &&
+            loaded.some((review) => review.userId === viewerId)
+          ) {
+            setHasOwnReview(true);
+          }
+          return loaded;
         })
         .catch(() => {
           // 404 / no session / offline -> show the empty state
           if (requestIdRef.current === requestId) {
             setRemoteReviews([]);
             setRemoteMeta({ totalPages: 0, count: 0 });
+            if (currentPage === 1) {
+              setHasOwnReview(false);
+              setOwnReviewResolved(true);
+            }
           }
           return [];
         });
@@ -163,6 +184,8 @@ export function ReviewRatingSection({ productId }) {
   const [editRating, setEditRating] = useState(0);
   const [savingId, setSavingId] = useState(null);
   const [deletingId, setDeletingId] = useState(null);
+  const [hasOwnReview, setHasOwnReview] = useState(false);
+  const [ownReviewResolved, setOwnReviewResolved] = useState(false);
 
   const reviewLiked = (review) =>
     isLiked[review.id] ?? Boolean(review.liked);
@@ -298,6 +321,8 @@ export function ReviewRatingSection({ productId }) {
       toast.success(
         t("product.reviewDeleted", { defaultValue: "Review deleted." }),
       );
+      setHasOwnReview(false);
+      setOwnReviewResolved(true);
       if (reviews.length === 1 && currentPage > 1) {
         setCurrentPage((page) => Math.max(1, page - 1));
       } else {
@@ -315,6 +340,8 @@ export function ReviewRatingSection({ productId }) {
   };
 
   const handleReviewSubmitted = () => {
+    setHasOwnReview(true);
+    setOwnReviewResolved(true);
     if (currentPage !== 1) {
       setCurrentPage(1);
       return;
@@ -326,21 +353,14 @@ export function ReviewRatingSection({ productId }) {
   const currentReviews = reviews;
 
   return (
-    <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <div className="mb-10 text-center">
-        <h1 className="text-3xl font-bold">{storeData.pageTitle}</h1>
-        <p className="text-muted-foreground mx-auto mt-2 max-w-2xl">
-          {storeData.pageDescription}
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 gap-8 lg:grid-cols-3">
-        <div className="flex flex-col gap-5 lg:col-span-2">
-          <div className="flex items-center justify-between gap-3 border-b pb-3">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="size-5 text-muted-foreground" />
-              <h2 className="text-lg font-semibold">
-                {t("product.customerReviews")}
+    <div className="w-full">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="flex flex-col gap-3 lg:col-span-2">
+          <div className="flex items-center justify-between gap-3 border-b pb-2.5">
+            <div className="flex items-center gap-1.5">
+              <MessageCircle className="text-muted-foreground size-4" />
+              <h2 className="text-sm font-medium">
+                {t("product.reviewsTab")}
               </h2>
             </div>
             {remoteMeta.count > 0 ? (
@@ -359,7 +379,7 @@ export function ReviewRatingSection({ productId }) {
             </div>
           ) : !canRead ? (
             <Card>
-              <CardContent className="flex flex-col items-center justify-center gap-3 py-12 text-center">
+              <CardContent className="flex flex-col items-center justify-center gap-3 py-8 text-center">
                 <Lock className="size-10 text-muted-foreground" />
                 <p className="text-sm font-medium">
                   {t("product.signInToSeeReviews", {
@@ -382,12 +402,12 @@ export function ReviewRatingSection({ productId }) {
               </CardContent>
             </Card>
           ) : currentReviews.length === 0 ? (
-            <div className="flex flex-col items-center justify-center py-12 text-center">
-              <MessageSquare className="text-muted-foreground mb-3 size-10" />
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <MessageSquare className="text-muted-foreground mb-2 size-8" />
               <p className="text-muted-foreground text-sm font-medium">
                 {t("product.noCommentsTitle")}
               </p>
-              <p className="text-muted-foreground mt-1 text-xs">
+              <p className="text-muted-foreground mt-0.5 text-xs">
                 {t("product.noCommentsDesc")}
               </p>
             </div>
@@ -402,182 +422,190 @@ export function ReviewRatingSection({ productId }) {
                 <Card
                   key={review.id}
                   className={cn(
-                    "transition-all hover:shadow-md",
-                    owner && "border-primary/40 ring-primary/10 ring-1",
+                    "shadow-none transition-shadow hover:shadow-sm",
+                    owner && "border-primary/30 bg-primary/[0.02]",
                   )}
                 >
-                  <CardContent className="p-6">
-                    <div className="flex items-start justify-between gap-4">
-                      <div className="flex min-w-0 items-start gap-4">
-                        <Avatar className="bg-muted size-12 shrink-0">
-                          <AvatarImage
-                            src={review.userAvatar}
-                            alt={`${userName}'s avatar`}
-                          />
-                          <AvatarFallback>
-                            {userName.substring(0, 2)}
-                          </AvatarFallback>
-                        </Avatar>
-                        <div className="min-w-0">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <h3 className="truncate font-medium">{userName}</h3>
-                            {owner ? (
-                              <span className="bg-primary/10 text-primary rounded-full px-2 py-0.5 text-[11px] font-semibold">
-                                {t("product.yourReview", {
-                                  defaultValue: "Your review",
-                                })}
-                              </span>
-                            ) : null}
-                          </div>
-                          <div className="text-muted-foreground mt-1 flex flex-wrap items-center gap-2 text-sm">
-                            <ReviewRatingStars
-                              value={review.rating}
-                              readOnly
-                            />
-                            <span>•</span>
-                            <time
-                              dateTime={review.date}
-                              className="flex items-center"
-                            >
-                              <Calendar className="me-1 size-3" />
-                              {review.date}
-                            </time>
-                            {review.edited ? (
-                              <>
-                                <span>•</span>
-                                <span className="text-xs">
-                                  {t("product.edited", {
-                                    defaultValue: "Edited",
+                  <CardContent className="p-4 sm:p-5">
+                    <div className="flex items-start gap-3">
+                      <Avatar className="bg-muted size-10 shrink-0">
+                        <AvatarImage
+                          src={review.userAvatar}
+                          alt={`${userName}'s avatar`}
+                        />
+                        <AvatarFallback className="text-xs">
+                          {userName.substring(0, 2)}
+                        </AvatarFallback>
+                      </Avatar>
+
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <h3 className="truncate text-sm font-medium">
+                                {userName}
+                              </h3>
+                              {owner ? (
+                                <span className="bg-primary/10 text-primary rounded-full px-1.5 py-px text-[10px] font-semibold">
+                                  {t("product.yourReview", {
+                                    defaultValue: "Your review",
                                   })}
                                 </span>
-                              </>
-                            ) : null}
+                              ) : null}
+                            </div>
+                            <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-1.5 text-xs">
+                              <ReviewRatingStars
+                                value={review.rating}
+                                readOnly
+                                size="size-3.5"
+                              />
+                              <span aria-hidden="true">·</span>
+                              <time
+                                dateTime={review.date}
+                                className="flex items-center"
+                              >
+                                <Calendar className="me-0.5 size-3" />
+                                {review.date}
+                              </time>
+                              {review.edited ? (
+                                <>
+                                  <span aria-hidden="true">·</span>
+                                  <span>
+                                    {t("product.edited", {
+                                      defaultValue: "Edited",
+                                    })}
+                                  </span>
+                                </>
+                              ) : null}
+                            </div>
                           </div>
-                        </div>
-                      </div>
 
-                      {owner && !isEditing ? (
-                        <div className="flex shrink-0 items-center gap-1">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 cursor-pointer text-muted-foreground hover:text-primary"
-                            onClick={() => startEdit(review)}
-                            aria-label={t("product.editReview", {
-                              defaultValue: "Edit review",
-                            })}
-                            title={t("product.editReview", {
-                              defaultValue: "Edit review",
-                            })}
-                          >
-                            <Pencil className="size-4" />
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon"
-                            className="size-8 cursor-pointer text-muted-foreground hover:text-destructive"
-                            onClick={() => deleteReview(review)}
-                            disabled={isDeleting}
-                            aria-label={t("product.deleteReview", {
-                              defaultValue: "Delete review",
-                            })}
-                            title={t("product.deleteReview", {
-                              defaultValue: "Delete review",
-                            })}
-                          >
-                            <Trash2
-                              className={cn(
-                                "size-4",
-                                isDeleting && "animate-pulse",
-                              )}
-                            />
-                          </Button>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {isEditing ? (
-                      <div className="mt-4 flex flex-col gap-3">
-                        <ReviewRatingStars
-                          value={editRating}
-                          onChange={setEditRating}
-                          size="size-5"
-                        />
-                        <Textarea
-                          value={editContent}
-                          onChange={(event) =>
-                            setEditContent(event.target.value)
-                          }
-                          className="min-h-24 resize-y"
-                          aria-label={t("product.editReview", {
-                            defaultValue: "Edit review",
-                          })}
-                        />
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="cursor-pointer"
-                            onClick={cancelEdit}
-                            disabled={savingId === review.id}
-                          >
-                            {t("product.cancel", { defaultValue: "Cancel" })}
-                          </Button>
-                          <Button
-                            type="button"
-                            size="sm"
-                            className="cursor-pointer"
-                            onClick={() => saveEdit(review)}
-                            disabled={
-                              savingId === review.id || isDeleting
-                            }
-                          >
-                            {savingId === review.id
-                              ? t("common.saving", {
-                                  defaultValue: "Saving…",
-                                })
-                              : t("product.saveChanges", {
-                                  defaultValue: "Save changes",
+                          {owner && !isEditing ? (
+                            <div className="flex shrink-0 items-center">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-primary size-7 cursor-pointer"
+                                onClick={() => startEdit(review)}
+                                aria-label={t("product.editReview", {
+                                  defaultValue: "Edit review",
                                 })}
-                          </Button>
+                                title={t("product.editReview", {
+                                  defaultValue: "Edit review",
+                                })}
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="text-muted-foreground hover:text-destructive size-7 cursor-pointer"
+                                onClick={() => deleteReview(review)}
+                                disabled={isDeleting}
+                                aria-label={t("product.deleteReview", {
+                                  defaultValue: "Delete review",
+                                })}
+                                title={t("product.deleteReview", {
+                                  defaultValue: "Delete review",
+                                })}
+                              >
+                                <Trash2
+                                  className={cn(
+                                    "size-3.5",
+                                    isDeleting && "animate-pulse",
+                                  )}
+                                />
+                              </Button>
+                            </div>
+                          ) : null}
                         </div>
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground mt-4 whitespace-pre-wrap break-words pt-[5px]">
-                        {review.content}
-                      </p>
-                    )}
 
-                    {!isEditing ? (
-                      <div className="mt-4 flex items-center gap-4">
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => toggleLike(review)}
-                          title={
-                            canWrite
-                              ? undefined
-                              : t("product.signInToLike", {
-                                  defaultValue: "Sign in to like reviews",
-                                })
-                          }
-                          className="text-muted-foreground hover:bg-primary/10 hover:text-primary h-8 cursor-pointer px-3 text-xs"
-                          aria-label={`${reviewLiked(review) ? "Unlike" : "Like"} this review`}
-                          aria-pressed={reviewLiked(review)}
-                        >
-                          <ReviewRatingReactionToggle
-                            active={reviewLiked(review)}
-                            icon={ThumbsUp}
-                            iconClassName="size-4"
-                            activeColorClassName="text-primary"
-                          />
-                          <span>{reviewLikes(review)}</span>
-                        </Button>
+                        {isEditing ? (
+                          <div className="mt-2 flex flex-col gap-2">
+                            <ReviewRatingStars
+                              value={editRating}
+                              onChange={setEditRating}
+                              size="size-4"
+                            />
+                            <Textarea
+                              value={editContent}
+                              onChange={(event) =>
+                                setEditContent(event.target.value)
+                              }
+                              className="min-h-20 resize-y text-sm"
+                              aria-label={t("product.editReview", {
+                                defaultValue: "Edit review",
+                              })}
+                            />
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 cursor-pointer px-3 text-xs"
+                                onClick={cancelEdit}
+                                disabled={savingId === review.id}
+                              >
+                                {t("product.cancel", {
+                                  defaultValue: "Cancel",
+                                })}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="sm"
+                                className="h-8 cursor-pointer px-3 text-xs"
+                                onClick={() => saveEdit(review)}
+                                disabled={
+                                  savingId === review.id || isDeleting
+                                }
+                              >
+                                {savingId === review.id
+                                  ? t("common.saving", {
+                                      defaultValue: "Saving…",
+                                    })
+                                  : t("product.saveChanges", {
+                                      defaultValue: "Save changes",
+                                    })}
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed">
+                            {review.content}
+                          </p>
+                        )}
+
+                        {!isEditing ? (
+                          <div className="mt-2">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => toggleLike(review)}
+                              title={
+                                canWrite
+                                  ? undefined
+                                  : t("product.signInToLike", {
+                                      defaultValue: "Sign in to like reviews",
+                                    })
+                              }
+                              className="text-muted-foreground hover:bg-primary/10 hover:text-primary -ml-2 h-7 cursor-pointer px-2 text-xs"
+                              aria-label={`${reviewLiked(review) ? "Unlike" : "Like"} this review`}
+                              aria-pressed={reviewLiked(review)}
+                            >
+                              <ReviewRatingReactionToggle
+                                active={reviewLiked(review)}
+                                icon={ThumbsUp}
+                                iconClassName="size-3.5"
+                                activeColorClassName="text-primary"
+                              />
+                              <span>{reviewLikes(review)}</span>
+                            </Button>
+                          </div>
+                        ) : null}
                       </div>
-                    ) : null}
+                    </div>
                   </CardContent>
                 </Card>
               );
@@ -585,7 +613,7 @@ export function ReviewRatingSection({ productId }) {
           )}
 
           {totalPages > 1 ? (
-            <Pagination className="mt-6">
+            <Pagination className="mt-4">
               <PaginationContent>
                 <PaginationItem>
                   <PaginationPrevious
@@ -629,13 +657,36 @@ export function ReviewRatingSection({ productId }) {
           ) : null}
         </div>
 
-        <ReviewRatingReviewForm
-          storeData={storeData}
-          productId={productId}
-          onSubmitted={handleReviewSubmitted}
-          canWrite={canWrite}
-          isGuest={Boolean(viewer?.isAnonymous)}
-        />
+        {hasOwnReview ? (
+          <div className="lg:sticky lg:top-8 lg:h-fit">
+            <Card className="shadow-none">
+              <CardContent className="flex items-start gap-3 p-4">
+                <CheckCircle2 className="text-primary mt-0.5 size-5 shrink-0" />
+                <div>
+                  <p className="text-sm font-medium">
+                    {t("product.alreadyReviewedTitle", {
+                      defaultValue: "You've already reviewed this product",
+                    })}
+                  </p>
+                  <p className="text-muted-foreground mt-0.5 text-xs">
+                    {t("product.alreadyReviewedDesc", {
+                      defaultValue:
+                        "Use the edit button on your review above to make changes.",
+                    })}
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : ownReviewResolved ? (
+          <ReviewRatingReviewForm
+            storeData={storeData}
+            productId={productId}
+            onSubmitted={handleReviewSubmitted}
+            canWrite={canWrite}
+            isGuest={Boolean(viewer?.isAnonymous)}
+          />
+        ) : null}
       </div>
     </div>
   );
