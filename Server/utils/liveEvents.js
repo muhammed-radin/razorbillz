@@ -704,9 +704,17 @@ export function normalizeApiPath(req) {
 }
 
 export function telemetryRequestMiddleware(req, res, next) {
+  const requestUrl = req.originalUrl || req.url || "";
+
+  // Static frontend assets are not API traffic; keep them out of the
+  // request/latency aggregates.
+  if (!requestUrl.startsWith("/api")) {
+    return next();
+  }
+
   // A stream stays open for minutes; recording it as one request would
   // wreck latency aggregates, and it has its own connection counters.
-  if (req.path?.startsWith("/api/live-events/stream")) {
+  if (requestUrl.startsWith("/api/live-events/stream")) {
     return next();
   }
 

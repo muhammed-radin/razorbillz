@@ -9,7 +9,7 @@ test.describe("admin redesign: shadcn orders + customers", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^orders$/i })).toBeVisible({
       timeout: 20000,
     });
@@ -40,7 +40,7 @@ test.describe("admin redesign: shadcn orders + customers", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/customers", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/customers", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^customers$/i })).toBeVisible({
       timeout: 20000,
     });
@@ -69,7 +69,7 @@ test.describe("admin redesign: shadcn orders + customers", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/analytics", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/analytics", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^analytics$/i })).toBeVisible({
       timeout: 20000,
     });
@@ -93,7 +93,7 @@ test.describe("admin redesign: shadcn orders + customers", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/payments", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/payments", { waitUntil: "domcontentloaded" });
     await expect(
       page.locator("h1", { hasText: /^payments & shipping$/i }),
     ).toBeVisible({ timeout: 20000 });
@@ -139,7 +139,7 @@ test.describe("admin redesign: shadcn orders + customers", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/categories", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/categories", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^categories$/i })).toBeVisible({
       timeout: 20000,
     });

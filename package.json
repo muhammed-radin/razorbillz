@@ -6,6 +6,8 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "start": "npm run build && npm run serve",
+    "serve": "npm --prefix Server run start:prod",
     "lint": "eslint .",
     "preview": "vite preview --host --port 5173",
     "final": "vite build && vite preview --host --port 5173"

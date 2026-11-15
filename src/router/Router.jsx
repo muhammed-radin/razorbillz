@@ -1,5 +1,5 @@
 import React from "react";
-import { createHashRouter, RouterProvider } from "react-router-dom";
+import { createBrowserRouter, RouterProvider } from "react-router-dom";
 
 import { LoaderScreen } from "@/components/LoaderScreen";
 import { RouteErrorScreen } from "./ErrorBoundary";
@@ -8,7 +8,7 @@ const lazyRoute = (importer) => ({
   lazy: async () => ({ Component: (await importer()).default }),
 });
 
-const router = createHashRouter([
+const router = createBrowserRouter([
   {
     ...lazyRoute(() => import("./SessionLayout")),
     errorElement: <RouteErrorScreen />,

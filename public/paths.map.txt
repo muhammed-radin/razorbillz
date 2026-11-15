@@ -3,8 +3,8 @@ RAZORBILLS - COMPLETE FRONT-END SITE & ROUTE ACCESS MAP
 ====================================================================================================
 Target Output File : public/paths.map.txt
 Project Domain     : https://razorbills.vercel.app
-Router Engine      : React Router v6 (createHashRouter)
-Browser URL Scheme : Hash-based (#/<path>)
+Router Engine      : React Router v7 (createBrowserRouter)
+Browser URL Scheme : Path-based (/<path>)
 Generated Date     : 2026-10-13
 Source References  : src/router/Router.jsx, src/App.jsx, src/pages/Admin/auth/page.index.jsx,
                      src/pages/Admin/admin.app.jsx, public/robots.txt, dist/sitemap.xml, public/sitemap.xml
@@ -39,9 +39,11 @@ Source References  : src/router/Router.jsx, src/App.jsx, src/pages/Admin/auth/pa
 ----------------------------------------------------------------------------------------------------
 2. ARCHITECTURAL GUARDS & ROUTING MECHANISMS
 ----------------------------------------------------------------------------------------------------
-1. Hash Router Implementation:
-   Defined via `createHashRouter` in `src/router/Router.jsx`.
-   All frontend paths resolve in browsers with the hash anchor prefix (e.g., `/#/search`).
+1. Browser Router Implementation:
+   Defined via `createBrowserRouter` in `src/router/Router.jsx`.
+   All frontend paths resolve as normal paths (e.g., `/search`). The Express
+   server returns `dist/index.html` for unmatched non-API GET requests so
+   deep links survive a hard refresh.
 
 2. SessionLayout (Root Wrapper):
    All routes are wrapped in `UserSessionProvider` in `src/router/SessionLayout.jsx`, providing
@@ -75,49 +77,49 @@ Source References  : src/router/Router.jsx, src/App.jsx, src/pages/Admin/auth/pa
 3. QUICK REFERENCE MASTER MATRIX (39 ROUTES)
 ====================================================================================================
 
-ROUTE PATH                     BROWSER HASH URL                     ACCESS LEVEL           ROBOTS.TXT    SITEMAP.XML  COMPONENT FILE
+ROUTE PATH                     BROWSER URL                          ACCESS LEVEL           ROBOTS.TXT    SITEMAP.XML  COMPONENT FILE
 ----------------------------------------------------------------------------------------------------------------------------------------------------------------
-1.  /                          /#/                                  Public / Guest / User  Allowed       Yes (1.0)    src/pages/home/page.jsx
-2.  /search                    /#/search                            Public / Guest / User  Allowed       Yes (0.8)    src/pages/search/page.jsx
-3.  /product/:id               /#/product/:id                       Public / Guest / User  Allowed       Yes* (0.8)   src/pages/product/page.jsx
-4.  /categories                /#/categories                        Public / Guest / User  Allowed       No           src/pages/categories/categories.page.jsx
-5.  /about                     /#/about                             Public / Guest / User  Allowed       Yes (0.7)    src/pages/aboutUs/page.jsx
-6.  /contact                   /#/contact                           Public / Guest / User  Allowed       Yes (0.7)    src/pages/contactus/page.jsx
-7.  /shipping                  /#/shipping                          Public / Guest / User  Allowed       Yes (0.5)    src/pages/shippingInfo/page.jsx
-8.  /return                    /#/return                            Public / Guest / User  Allowed       Yes (0.5)    src/pages/return/page.jsx
-9.  /privacy                   /#/privacy                           Public / Guest / User  Allowed       Yes (0.4)    src/pages/privacy/page.jsx
-10. /terms                     /#/terms                             Public / Guest / User  Allowed       Yes (0.4)    src/pages/TermsAndConditions/TermsAndConditions.jsx
-11. /order-status              /#/order-status                      Public / Guest / User  Allowed       No           src/pages/order-status/page.jsx
-12. /order/status              /#/order/status                      Customer / User        Allowed       No           src/pages/order-status/page.jsx
-13. /login                     /#/login                             Public / Guest Only    Allowed       Yes (0.5)    src/pages/login/page.jsx
-14. /signup                    /#/signup                            Public / Guest Only    Allowed       Yes (0.5)    src/pages/signup/page.jsx
-15. /forgot-password           /#/forgot-password                   Public / Guest Only    Allowed       No           src/pages/forgot-password/page.jsx
-16. /redirect                  /#/redirect                          Public / OAuth Flow    Allowed       No           src/pages/redirect/gprovider.jsx
-17. /cart                      /#/cart                              Registered User Only   Allowed       Yes (0.6)    src/pages/cart/page.jsx
-18. /checkout                  /#/checkout                          Registered User Only   Allowed       No           src/pages/checkout/page.jsx
-19. /order                     /#/order                             Registered User Only   Allowed       Yes (0.6)    src/pages/orderhistory/Orderhistory.jsx
-20. /wishlist                  /#/wishlist                          Registered User Only   Allowed       Yes (0.6)    src/pages/wishlist/Wishlist.jsx
-21. /settings                  /#/settings                          Registered User Only   Allowed       Yes (0.4)    src/pages/settings/page.jsx
-22. /addressbook               /#/addressbook                       Registered User Only   Allowed       Yes (0.4)    src/pages/addressbook/page.jsx
-23. /support                   /#/support                           Registered User Only   Allowed       No           src/pages/support/page.jsx
-24. /payment-success           /#/payment-success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
-25. /payment/success           /#/payment/success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
-26. /404                       /#/404                               Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
-27. * (Wildcard)               /#/* (Any unmapped)                  Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
-28. /auth/admin                /#/auth/admin                        Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
-29. /auth/admin/dashboard      /#/auth/admin/dashboard              Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
-30. /auth/admin/products       /#/auth/admin/products               Administrator Only     Disallowed    No           src/pages/Admin/products/page.jsx
-31. /auth/admin/products/new   /#/auth/admin/products/new           Administrator Only     Disallowed    No           src/pages/Admin/products/pages/new/page.jsx
-32. /auth/admin/products/:id/edit /#/auth/admin/products/:id/edit   Administrator Only     Disallowed    No           src/pages/Admin/products/pages/edit/[id].jsx
-33. /auth/admin/orders         /#/auth/admin/orders                 Administrator Only     Disallowed    No           src/pages/Admin/orders/index.jsx
-34. /auth/admin/customers      /#/auth/admin/customers              Administrator Only     Disallowed    No           src/pages/Admin/customers/index.jsx
-35. /auth/admin/categories     /#/auth/admin/categories             Administrator Only     Disallowed    No           src/pages/Admin/categories/index.jsx
-36. /auth/admin/analytics      /#/auth/admin/analytics              Administrator Only     Disallowed    No           src/pages/Admin/analytics/index.jsx
-37. /auth/admin/payments       /#/auth/admin/payments               Administrator Only     Disallowed    No           src/pages/Admin/payments/index.jsx
-38. /auth/admin/support        /#/auth/admin/support                Administrator Only     Disallowed    No           src/pages/Admin/support/index.jsx
-39. /auth/admin/settings       /#/auth/admin/settings               Administrator Only     Disallowed    No           src/pages/Admin/settings/page.jsx
+1.  /                          /                                  Public / Guest / User  Allowed       Yes (1.0)    src/pages/home/page.jsx
+2.  /search                    /search                            Public / Guest / User  Allowed       Yes (0.8)    src/pages/search/page.jsx
+3.  /product/:id               /product/:id                       Public / Guest / User  Allowed       Yes* (0.8)   src/pages/product/page.jsx
+4.  /categories                /categories                        Public / Guest / User  Allowed       No           src/pages/categories/categories.page.jsx
+5.  /about                     /about                             Public / Guest / User  Allowed       Yes (0.7)    src/pages/aboutUs/page.jsx
+6.  /contact                   /contact                           Public / Guest / User  Allowed       Yes (0.7)    src/pages/contactus/page.jsx
+7.  /shipping                  /shipping                          Public / Guest / User  Allowed       Yes (0.5)    src/pages/shippingInfo/page.jsx
+8.  /return                    /return                            Public / Guest / User  Allowed       Yes (0.5)    src/pages/return/page.jsx
+9.  /privacy                   /privacy                           Public / Guest / User  Allowed       Yes (0.4)    src/pages/privacy/page.jsx
+10. /terms                     /terms                             Public / Guest / User  Allowed       Yes (0.4)    src/pages/TermsAndConditions/TermsAndConditions.jsx
+11. /order-status              /order-status                      Public / Guest / User  Allowed       No           src/pages/order-status/page.jsx
+12. /order/status              /order/status                      Customer / User        Allowed       No           src/pages/order-status/page.jsx
+13. /login                     /login                             Public / Guest Only    Allowed       Yes (0.5)    src/pages/login/page.jsx
+14. /signup                    /signup                            Public / Guest Only    Allowed       Yes (0.5)    src/pages/signup/page.jsx
+15. /forgot-password           /forgot-password                   Public / Guest Only    Allowed       No           src/pages/forgot-password/page.jsx
+16. /redirect                  /redirect                          Public / OAuth Flow    Allowed       No           src/pages/redirect/gprovider.jsx
+17. /cart                      /cart                              Registered User Only   Allowed       Yes (0.6)    src/pages/cart/page.jsx
+18. /checkout                  /checkout                          Registered User Only   Allowed       No           src/pages/checkout/page.jsx
+19. /order                     /order                             Registered User Only   Allowed       Yes (0.6)    src/pages/orderhistory/Orderhistory.jsx
+20. /wishlist                  /wishlist                          Registered User Only   Allowed       Yes (0.6)    src/pages/wishlist/Wishlist.jsx
+21. /settings                  /settings                          Registered User Only   Allowed       Yes (0.4)    src/pages/settings/page.jsx
+22. /addressbook               /addressbook                       Registered User Only   Allowed       Yes (0.4)    src/pages/addressbook/page.jsx
+23. /support                   /support                           Registered User Only   Allowed       No           src/pages/support/page.jsx
+24. /payment-success           /payment-success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
+25. /payment/success           /payment/success                   Registered User Only   Allowed       No           src/pages/payment-success/page.jsx
+26. /404                       /404                               Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
+27. * (Wildcard)               /* (Any unmapped)                  Public / Anyone        Allowed       No           src/pages/notfound/page.jsx
+28. /auth/admin                /auth/admin                        Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
+29. /auth/admin/dashboard      /auth/admin/dashboard              Administrator Only     Disallowed    No           src/pages/Admin/dashboard/page.jsx
+30. /auth/admin/products       /auth/admin/products               Administrator Only     Disallowed    No           src/pages/Admin/products/page.jsx
+31. /auth/admin/products/new   /auth/admin/products/new           Administrator Only     Disallowed    No           src/pages/Admin/products/pages/new/page.jsx
+32. /auth/admin/products/:id/edit /auth/admin/products/:id/edit   Administrator Only     Disallowed    No           src/pages/Admin/products/pages/edit/[id].jsx
+33. /auth/admin/orders         /auth/admin/orders                 Administrator Only     Disallowed    No           src/pages/Admin/orders/index.jsx
+34. /auth/admin/customers      /auth/admin/customers              Administrator Only     Disallowed    No           src/pages/Admin/customers/index.jsx
+35. /auth/admin/categories     /auth/admin/categories             Administrator Only     Disallowed    No           src/pages/Admin/categories/index.jsx
+36. /auth/admin/analytics      /auth/admin/analytics              Administrator Only     Disallowed    No           src/pages/Admin/analytics/index.jsx
+37. /auth/admin/payments       /auth/admin/payments               Administrator Only     Disallowed    No           src/pages/Admin/payments/index.jsx
+38. /auth/admin/support        /auth/admin/support                Administrator Only     Disallowed    No           src/pages/Admin/support/index.jsx
+39. /auth/admin/settings       /auth/admin/settings               Administrator Only     Disallowed    No           src/pages/Admin/settings/page.jsx
 
-* Note on Sitemap: In dist/sitemap.xml and public/sitemap.xml, product detail is listed as `/product` or `/#/product`.
+* Note on Sitemap: In dist/sitemap.xml and public/sitemap.xml, product detail is listed as `/product`.
 
 ====================================================================================================
 4. COMPREHENSIVE ROUTE SPECIFICATIONS
@@ -129,7 +131,7 @@ GROUP A: PUBLIC STOREFRONT & CATALOG PAGES
 
 [ROUTE 01]
 - Path               : / (Index Route)
-- Browser URL        : https://razorbills.vercel.app/#/
+- Browser URL        : https://razorbills.vercel.app/
 - Component          : src/pages/home/page.jsx
 - Section            : Public Storefront
 - Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
@@ -144,7 +146,7 @@ GROUP A: PUBLIC STOREFRONT & CATALOG PAGES
 
 [ROUTE 02]
 - Path               : /search
-- Browser URL        : https://razorbills.vercel.app/#/search
+- Browser URL        : https://razorbills.vercel.app/search
 - Component          : src/pages/search/page.jsx
 - Section            : Product Discovery & Catalog
 - Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
@@ -160,7 +162,7 @@ GROUP A: PUBLIC STOREFRONT & CATALOG PAGES
 
 [ROUTE 03]
 - Path               : /product/:id
-- Browser URL        : https://razorbills.vercel.app/#/product/:id (e.g. /#/product/PRD-101)
+- Browser URL        : https://razorbills.vercel.app/product/:id (e.g. /product/PRD-101)
 - Component          : src/pages/product/page.jsx
 - Section            : Product Details Page (PDP)
 - Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
@@ -177,7 +179,7 @@ GROUP A: PUBLIC STOREFRONT & CATALOG PAGES
 
 [ROUTE 04]
 - Path               : /categories
-- Browser URL        : https://razorbills.vercel.app/#/categories
+- Browser URL        : https://razorbills.vercel.app/categories
 - Component          : src/pages/categories/categories.page.jsx
 - Section            : Catalog Navigation
 - Who Can Visit      : Anyone (Public visitors, anonymous guests, logged-in customers, administrators).
@@ -196,7 +198,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 05]
 - Path               : /about
-- Browser URL        : https://razorbills.vercel.app/#/about
+- Browser URL        : https://razorbills.vercel.app/about
 - Component          : src/pages/aboutUs/page.jsx
 - Section            : Corporate & Informational
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -210,7 +212,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 06]
 - Path               : /contact
-- Browser URL        : https://razorbills.vercel.app/#/contact
+- Browser URL        : https://razorbills.vercel.app/contact
 - Component          : src/pages/contactus/page.jsx
 - Section            : Customer Support & Inquiry
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -224,7 +226,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 07]
 - Path               : /shipping
-- Browser URL        : https://razorbills.vercel.app/#/shipping
+- Browser URL        : https://razorbills.vercel.app/shipping
 - Component          : src/pages/shippingInfo/page.jsx
 - Section            : Logistics & Delivery Information
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -238,7 +240,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 08]
 - Path               : /return
-- Browser URL        : https://razorbills.vercel.app/#/return
+- Browser URL        : https://razorbills.vercel.app/return
 - Component          : src/pages/return/page.jsx
 - Section            : Legal & Customer Policy
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -253,7 +255,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 09]
 - Path               : /privacy
-- Browser URL        : https://razorbills.vercel.app/#/privacy
+- Browser URL        : https://razorbills.vercel.app/privacy
 - Component          : src/pages/privacy/page.jsx
 - Section            : Legal & Compliance
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -267,7 +269,7 @@ GROUP B: INFORMATIONAL & LEGAL POLICY PAGES
 
 [ROUTE 10]
 - Path               : /terms
-- Browser URL        : https://razorbills.vercel.app/#/terms
+- Browser URL        : https://razorbills.vercel.app/terms
 - Component          : src/pages/TermsAndConditions/TermsAndConditions.jsx
 - Section            : Legal & Compliance
 - Who Can Visit      : Anyone (Public visitors, guests, registered customers, administrators).
@@ -286,7 +288,7 @@ GROUP C: AUTHENTICATION & IDENTITY FLOWS
 
 [ROUTE 11]
 - Path               : /login
-- Browser URL        : https://razorbills.vercel.app/#/login
+- Browser URL        : https://razorbills.vercel.app/login
 - Component          : src/pages/login/page.jsx
 - Section            : Authentication
 - Who Can Visit      : Unauthenticated visitors, anonymous guests, or users switching accounts.
@@ -302,7 +304,7 @@ GROUP C: AUTHENTICATION & IDENTITY FLOWS
 
 [ROUTE 12]
 - Path               : /signup
-- Browser URL        : https://razorbills.vercel.app/#/signup
+- Browser URL        : https://razorbills.vercel.app/signup
 - Component          : src/pages/signup/page.jsx
 - Section            : User Registration
 - Who Can Visit      : New visitors, unauthenticated users, anonymous guests.
@@ -316,7 +318,7 @@ GROUP C: AUTHENTICATION & IDENTITY FLOWS
 
 [ROUTE 13]
 - Path               : /forgot-password
-- Browser URL        : https://razorbills.vercel.app/#/forgot-password
+- Browser URL        : https://razorbills.vercel.app/forgot-password
 - Component          : src/pages/forgot-password/page.jsx
 - Section            : Account Recovery
 - Who Can Visit      : Anyone needing password recovery.
@@ -330,7 +332,7 @@ GROUP C: AUTHENTICATION & IDENTITY FLOWS
 
 [ROUTE 14]
 - Path               : /redirect
-- Browser URL        : https://razorbills.vercel.app/#/redirect
+- Browser URL        : https://razorbills.vercel.app/redirect
 - Component          : src/pages/redirect/gprovider.jsx
 - Section            : Authentication Callback Handler
 - Who Can Visit      : System/Browser during OAuth flow.
@@ -348,7 +350,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 15]
 - Path               : /cart
-- Browser URL        : https://razorbills.vercel.app/#/cart
+- Browser URL        : https://razorbills.vercel.app/cart
 - Component          : src/pages/cart/page.jsx
 - Section            : Customer Shopping Workflow
 - Who Can Visit      : Registered Customers (non-anonymous authenticated sessions).
@@ -365,7 +367,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 16]
 - Path               : /checkout
-- Browser URL        : https://razorbills.vercel.app/#/checkout
+- Browser URL        : https://razorbills.vercel.app/checkout
 - Component          : src/pages/checkout/page.jsx
 - Section            : Checkout & Order Placement Flow
 - Who Can Visit      : Registered Customers with items in cart.
@@ -382,7 +384,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 17]
 - Path               : /payment-success
-- Browser URL        : https://razorbills.vercel.app/#/payment-success
+- Browser URL        : https://razorbills.vercel.app/payment-success
 - Component          : src/pages/payment-success/page.jsx
 - Section            : Post-Purchase Confirmation
 - Who Can Visit      : Registered Customers after placing an order.
@@ -397,7 +399,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 18]
 - Path               : /payment/success
-- Browser URL        : https://razorbills.vercel.app/#/payment/success
+- Browser URL        : https://razorbills.vercel.app/payment/success
 - Component          : src/pages/payment-success/page.jsx
 - Section            : Post-Purchase Confirmation (Route Alias)
 - Who Can Visit      : Registered Customers.
@@ -411,7 +413,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 19]
 - Path               : /order-status
-- Browser URL        : https://razorbills.vercel.app/#/order-status
+- Browser URL        : https://razorbills.vercel.app/order-status
 - Component          : src/pages/order-status/page.jsx
 - Section            : Order Lookup & Tracking
 - Who Can Visit      : Anyone possessing a valid Order ID (e.g. ?id=ORD-XXXX).
@@ -427,7 +429,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 20]
 - Path               : /order/status
-- Browser URL        : https://razorbills.vercel.app/#/order/status
+- Browser URL        : https://razorbills.vercel.app/order/status
 - Component          : src/pages/order-status/page.jsx
 - Section            : Order Lookup & Tracking (Route Alias)
 - Who Can Visit      : Registered Customers (Note: this slash-variant is omitted from GUEST_ACCESS_PATHS).
@@ -442,7 +444,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 21]
 - Path               : /order
-- Browser URL        : https://razorbills.vercel.app/#/order
+- Browser URL        : https://razorbills.vercel.app/order
 - Component          : src/pages/orderhistory/Orderhistory.jsx
 - Section            : Customer Account
 - Who Can Visit      : Registered Customers only.
@@ -457,7 +459,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 22]
 - Path               : /wishlist
-- Browser URL        : https://razorbills.vercel.app/#/wishlist
+- Browser URL        : https://razorbills.vercel.app/wishlist
 - Component          : src/pages/wishlist/Wishlist.jsx
 - Section            : Customer Account
 - Who Can Visit      : Registered Customers only.
@@ -471,7 +473,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 23]
 - Path               : /settings
-- Browser URL        : https://razorbills.vercel.app/#/settings
+- Browser URL        : https://razorbills.vercel.app/settings
 - Component          : src/pages/settings/page.jsx
 - Section            : Customer Account
 - Who Can Visit      : Registered Customers only.
@@ -486,7 +488,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 24]
 - Path               : /addressbook
-- Browser URL        : https://razorbills.vercel.app/#/addressbook
+- Browser URL        : https://razorbills.vercel.app/addressbook
 - Component          : src/pages/addressbook/page.jsx
 - Section            : Customer Account
 - Who Can Visit      : Registered Customers only.
@@ -501,7 +503,7 @@ GROUP D: CUSTOMER ACCOUNT & SHOPPING WORKFLOW PAGES
 
 [ROUTE 25]
 - Path               : /support
-- Browser URL        : https://razorbills.vercel.app/#/support
+- Browser URL        : https://razorbills.vercel.app/support
 - Component          : src/pages/support/page.jsx
 - Section            : Customer Care & Helpdesk
 - Who Can Visit      : Registered Customers only.
@@ -522,7 +524,7 @@ GROUP E: UTILITY & ERROR FALLBACK PAGES
 
 [ROUTE 26]
 - Path               : /404
-- Browser URL        : https://razorbills.vercel.app/#/404
+- Browser URL        : https://razorbills.vercel.app/404
 - Component          : src/pages/notfound/page.jsx
 - Section            : Error & Security Redirect Target
 - Who Can Visit      : Anyone.
@@ -537,7 +539,7 @@ GROUP E: UTILITY & ERROR FALLBACK PAGES
 
 [ROUTE 27]
 - Path               : * (Wildcard Catch-all)
-- Browser URL        : https://razorbills.vercel.app/#/<any-undefined-route>
+- Browser URL        : https://razorbills.vercel.app/<any-undefined-route>
 - Component          : src/pages/notfound/page.jsx
 - Section            : Wildcard Router Fallback
 - Who Can Visit      : Anyone attempting to open an unmapped route.
@@ -570,7 +572,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 28]
 - Path               : /auth/admin (Admin Index)
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin
+- Browser URL        : https://razorbills.vercel.app/auth/admin
 - Component          : src/pages/Admin/dashboard/page.jsx
 - Section            : Administrative Backoffice
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -579,7 +581,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 29]
 - Path               : /auth/admin/dashboard
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/dashboard
+- Browser URL        : https://razorbills.vercel.app/auth/admin/dashboard
 - Component          : src/pages/Admin/dashboard/page.jsx
 - Section            : Administrative Dashboard
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -590,7 +592,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 30]
 - Path               : /auth/admin/products
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products
+- Browser URL        : https://razorbills.vercel.app/auth/admin/products
 - Component          : src/pages/Admin/products/page.jsx
 - Section            : Product Catalog Administration
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -601,7 +603,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 31]
 - Path               : /auth/admin/products/new
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products/new
+- Browser URL        : https://razorbills.vercel.app/auth/admin/products/new
 - Component          : src/pages/Admin/products/pages/new/page.jsx
 - Section            : Product Creation
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -617,7 +619,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 32]
 - Path               : /auth/admin/products/:id/edit
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/products/:id/edit
+- Browser URL        : https://razorbills.vercel.app/auth/admin/products/:id/edit
 - Component          : src/pages/Admin/products/pages/edit/[id].jsx
 - Section            : Product Editor
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -628,7 +630,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 33]
 - Path               : /auth/admin/orders
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/orders
+- Browser URL        : https://razorbills.vercel.app/auth/admin/orders
 - Component          : src/pages/Admin/orders/index.jsx
 - Section            : Order Fulfillment & Management
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -640,7 +642,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 34]
 - Path               : /auth/admin/customers
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/customers
+- Browser URL        : https://razorbills.vercel.app/auth/admin/customers
 - Component          : src/pages/Admin/customers/index.jsx
 - Section            : Customer Relationship Management (CRM)
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -651,7 +653,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 35]
 - Path               : /auth/admin/categories
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/categories
+- Browser URL        : https://razorbills.vercel.app/auth/admin/categories
 - Component          : src/pages/Admin/categories/index.jsx
 - Section            : Category & Taxonomy Management
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -662,7 +664,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 36]
 - Path               : /auth/admin/analytics
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/analytics
+- Browser URL        : https://razorbills.vercel.app/auth/admin/analytics
 - Component          : src/pages/Admin/analytics/index.jsx
 - Section            : Business & Platform Analytics
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -675,7 +677,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 37]
 - Path               : /auth/admin/payments
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/payments
+- Browser URL        : https://razorbills.vercel.app/auth/admin/payments
 - Component          : src/pages/Admin/payments/index.jsx
 - Section            : Financial & Payment Auditing
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -686,7 +688,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 38]
 - Path               : /auth/admin/support
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/support
+- Browser URL        : https://razorbills.vercel.app/auth/admin/support
 - Component          : src/pages/Admin/support/index.jsx
 - Section            : Helpdesk Administration
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -697,7 +699,7 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
 
 [ROUTE 39]
 - Path               : /auth/admin/settings
-- Browser URL        : https://razorbills.vercel.app/#/auth/admin/settings
+- Browser URL        : https://razorbills.vercel.app/auth/admin/settings
 - Component          : src/pages/Admin/settings/page.jsx
 - Section            : Store Configuration & System Settings
 - Who Can Visit      : Store Administrators only (`role: "admin"`).
@@ -716,13 +718,11 @@ ALL ROUTES IN THIS GROUP SHARE THE FOLLOWING GLOBAL CONSTRAINTS:
    - Recommendation: If guests need to access order tracking via `/order/status`, add `"/order/status"`
      to `GUEST_ACCESS_PATHS` in `src/App.jsx`.
 
-2. Sitemap Consistency (Hash Routing vs Standard URLs):
-   - In `dist/sitemap.xml`, URLs are written without hash anchors:
+2. Sitemap Consistency:
+   - Both `public/sitemap.xml` and `dist/sitemap.xml` use standard path URLs:
      `<loc>https://razorbills.vercel.app/search</loc>`
-   - In `public/sitemap.xml`, URLs are written with hash anchors:
-     `<loc>https://razorbills.vercel.app/#/search</loc>`
-   - Search engine crawlers (e.g. Googlebot) typically ignore fragment identifiers (#). If static
-     pre-rendering or HTML rewrites are used, standard path URLs without hashes are preferred for SEO.
+   - This matches BrowserRouter and the Express SPA fallback, so every listed
+     URL resolves to the correct page on a direct visit.
 
 3. Missing Public Pages in Sitemap:
    - The following public pages are currently omitted from `public/sitemap.xml`:

@@ -10,7 +10,7 @@ test.describe("search: request deduplication", () => {
         productCalls.push({ url: r.url(), t: Date.now() });
       }
     });
-    await page.goto("/#/search", { waitUntil: "domcontentloaded" });
+    await page.goto("/search", { waitUntil: "domcontentloaded" });
     // Dismiss the guest gate FIRST: while the modal is open the page
     // behind it is inert (and Playwright treats it as hidden).
     // ensureGuest retries: a first click can be swallowed by the

@@ -78,7 +78,7 @@ async function apiFetch(page, path, { method = "GET", body } = {}) {
 test.describe.serial("seed local database", () => {
   test("admin account exists and is promoted", async ({ page }) => {
     await dbHelper("cleanup", ADMIN.email).catch(() => {});
-    await page.goto("/#/signup", { waitUntil: "domcontentloaded" });
+    await page.goto("/signup", { waitUntil: "domcontentloaded" });
     await page.getByPlaceholder(/full name|name/i).first().fill(ADMIN.name);
     await page.getByPlaceholder(/email/i).first().fill(ADMIN.email);
     await page.getByPlaceholder(/password/i).first().fill(ADMIN.password);
@@ -108,7 +108,7 @@ test.describe.serial("seed local database", () => {
   test("customer + mixed-status orders seeded", async ({ page, browser }) => {
     await dbHelper("cleanup", CUSTOMER.email).catch(() => {});
     const c = await browser.newPage();
-    await c.goto("/#/signup", { waitUntil: "domcontentloaded" });
+    await c.goto("/signup", { waitUntil: "domcontentloaded" });
     await c.getByPlaceholder(/full name|name/i).first().fill(CUSTOMER.name);
     await c.getByPlaceholder(/email/i).first().fill(CUSTOMER.email);
     await c.getByPlaceholder(/password/i).first().fill(CUSTOMER.password);

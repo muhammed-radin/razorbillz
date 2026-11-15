@@ -1,24 +1,3 @@
-/**
- * Generates a full URL using the current origin and a provided hash.
- * @param {string} hash - The hash string (e.g., 'sfd' or '#sfd').
- * @param {string} [baseUrl] - The base URL to use (optional).
- * @returns {string} The complete URL.
- */
-const generateHashLink = (hash, baseUrl) => {
-  // Ensure the hash starts with a '#' symbol
-  const formattedHash = hash.startsWith("#") ? hash : `#${hash}`;
-
-  // Combine the browser's current origin with the formatted hash
-  if (
-    typeof window !== "undefined" &&
-    window.location &&
-    window.location.origin
-  ) {
-    return `${window.location.origin}/${formattedHash}`;
-  }
-  return `${baseUrl || ""}/${formattedHash}`;
-};
-
 class URLOperator {
   constructor(baseUrl, paths, hashes, queryParams, chain = false) {
     this.baseUrl =
@@ -78,13 +57,6 @@ class URLOperator {
       queryString ? `?${queryString}` : ""
     }`;
   }
-
-  hashPathURL() {
-    const queryString = new URLSearchParams(this.queryParams).toString();
-    return `${this.baseUrl}/#${this.paths}${this.hashes}${
-      queryString ? `?${queryString}` : ""
-    }`;
-  }
 }
 
 function createURLOperator(baseUrl, paths, hashes, queryParams) {
@@ -96,8 +68,7 @@ function origin(baseUrl) {
 }
 
 if (typeof window !== "undefined") {
-  window.generateHashLink = generateHashLink;
   window.createURLOperator = createURLOperator;
   window.origin = origin;
 }
-export { generateHashLink, createURLOperator, origin };
+export { createURLOperator, origin };

@@ -99,13 +99,13 @@ test.describe.serial("customer: COD checkout journey", () => {
     expect(addrStatus, "address save").toBe(200);
 
     // Browse -> product page -> add to cart (real UI).
-    await page.goto("/#/search", { waitUntil: "domcontentloaded" });
+    await page.goto("/search", { waitUntil: "domcontentloaded" });
     await page.getByPlaceholder("Search products, categories, or keywords...").fill(FX_PID);
     await expect(
       page.locator(`text=PW COD Fixture ${FX_PID}`).first(),
     ).toBeVisible({ timeout: 20000 });
     // Open the product detail page directly (same destination as the card link).
-    await page.goto(`/#/product/${FX_PID}`, { waitUntil: "domcontentloaded" });
+    await page.goto(`/product/${FX_PID}`, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/product\//, { timeout: 15000 });
     const addBtn = page.getByRole("button", { name: /add to cart/i });
     await expect(addBtn.first()).toBeVisible({ timeout: 15000 });
@@ -113,7 +113,7 @@ test.describe.serial("customer: COD checkout journey", () => {
     await page.waitForTimeout(2000);
 
     // Checkout with COD.
-    await page.goto("/#/checkout", { waitUntil: "domcontentloaded" });
+    await page.goto("/checkout", { waitUntil: "domcontentloaded" });
     // Select the saved address if a selector is shown.
     const addrCard = page.locator(`text=Kottakkal`).first();
     if (await addrCard.isVisible({ timeout: 8000 }).catch(() => false)) {
@@ -143,13 +143,13 @@ test.describe.serial("customer: COD checkout journey", () => {
     });
 
     // Cart must be cleared after confirmed COD creation.
-    await page.goto("/#/cart", { waitUntil: "domcontentloaded" });
+    await page.goto("/cart", { waitUntil: "domcontentloaded" });
     await expect(
       page.locator(`text=PW COD Fixture ${FX_PID}`),
     ).toHaveCount(0, { timeout: 20000 });
 
     // Order appears in history and detail loads without crashing.
-    await page.goto("/#/order", { waitUntil: "domcontentloaded" });
+    await page.goto("/order", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(4000);
     const histBody = await page.locator("body").innerText();
     expect(histBody.length).toBeGreaterThan(100);
@@ -217,7 +217,7 @@ test.describe.serial("customer: COD checkout journey", () => {
     await loginAs(page, customer.email, customer.password);
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("/#/order-status?id=ORD-1791704067881-KB0ZRE", {
+    await page.goto("/order-status?id=ORD-1791704067881-KB0ZRE", {
       waitUntil: "domcontentloaded",
     });
     await page.waitForTimeout(5000);

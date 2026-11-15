@@ -110,7 +110,7 @@ test.describe.serial("admin: cancel/return request decisions", () => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
-    await page.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await page.getByRole("tab", { name: /requests/i }).click();
     await expect(page.locator(`text=${orderId}`).first()).toBeVisible({
       timeout: 20000,
@@ -149,7 +149,7 @@ test.describe.serial("admin: cancel/return request decisions", () => {
     }
 
     // Customer requests a return from the real UI.
-    await c.goto("/#/order", { waitUntil: "domcontentloaded" });
+    await c.goto("/order", { waitUntil: "domcontentloaded" });
     await expect(c.locator(`text=${orderId}`).first()).toBeVisible({ timeout: 20000 });
     await c.locator("tr", { hasText: orderId }).getByRole("button", { name: /^return$/i }).click();
     await c.locator("text=Product damaged on arrival").first().click();
@@ -159,7 +159,7 @@ test.describe.serial("admin: cancel/return request decisions", () => {
     });
 
     // Admin denies with a reason from the Requests queue.
-    await page.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await page.getByRole("tab", { name: /requests/i }).click();
     await expect(page.locator(`text=${orderId}`).first()).toBeVisible({
       timeout: 20000,
@@ -186,7 +186,7 @@ test.describe.serial("admin: cancel/return request decisions", () => {
     const errors = [];
     m.on("pageerror", (e) => errors.push(e.message));
     await loginAs(m, ADMIN_EMAIL, ADMIN_PW);
-    await m.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await m.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await m.waitForTimeout(4000);
     // Newest rows may already be cancelled/delivered by other suites —
     // iterate through the page's order menus until one offers "Cancel Order".
@@ -232,7 +232,7 @@ test.describe.serial("admin: cancel/return request decisions", () => {
     const errors = [];
     m.on("pageerror", (e) => errors.push(e.message));
     await loginAs(m, ADMIN_EMAIL, ADMIN_PW);
-    await m.goto("/#/auth/admin/dashboard", { waitUntil: "domcontentloaded" });
+    await m.goto("/auth/admin/dashboard", { waitUntil: "domcontentloaded" });
     await expect(m.locator("h1", { hasText: /dashboard/i })).toBeVisible({
       timeout: 20000,
     });

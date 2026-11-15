@@ -1,7 +1,7 @@
 // Sign in modal required utility function
 import { api } from "./api";
 import { alert } from "../components/dialog-alert-provider";
-import { generateHashLink } from "@shared/utils/route-util";
+import { origin } from "@shared/utils/route-util";
 
 async function validateSignInModalRequired() {
   // Check if the user is signed in
@@ -27,7 +27,7 @@ async function openAuthenticationModal() {
 
   if (result) {
     // Redirect to login page
-    window.location.href = generateHashLink("/login");
+    window.location.href = origin().path("/login").url();
   } else {
     return isSignedIn; // User chose to continue as guest, return false
   }

@@ -50,7 +50,9 @@ export default defineConfig(({ mode }) => {
         "Cross-Origin-Opener-Policy": "same-origin-allow-popups",
       },
     },
-    base: "./",
+    /* BrowserRouter needs absolute asset URLs: with a relative base a hard
+     * refresh on `/product/123` would request `/product/assets/...`. */
+    base: "/",
     build: {
       rollupOptions: {
         output: {

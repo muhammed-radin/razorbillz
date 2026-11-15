@@ -42,7 +42,7 @@ export async function gotoGuest(page, hash) {
 export async function signupAs(page, tag) {
   const email = `pw-${Date.now().toString(36)}-${tag}@example.com`;
   const user = { name: `PW ${tag}`, email, password: "Test1234!" };
-  await page.goto("/#/signup", { waitUntil: "domcontentloaded" });
+  await page.goto("/signup", { waitUntil: "domcontentloaded" });
   // The signup form re-renders on mount (locale hydration) and can detach
   // inputs mid-fill — retry each fill a few times.
   const fillRetry = async (target, value) => {
@@ -67,7 +67,7 @@ export async function signupAs(page, tag) {
 
 /** Real UI login. */
 export async function loginAs(page, email, password) {
-  await page.goto("/#/login", { waitUntil: "domcontentloaded" });
+  await page.goto("/login", { waitUntil: "domcontentloaded" });
   await page.getByPlaceholder(/email/i).first().fill(email);
   await page.getByPlaceholder(/password/i).first().fill(password);
   await page.getByRole("button", { name: /continue with email/i }).click();

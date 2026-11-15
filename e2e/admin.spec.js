@@ -12,7 +12,7 @@ test.describe.serial("admin: dashboard + CRUD + queues", () => {
     // Ensure a clean slate, then create + promote the admin via real signup.
     await dbHelper("cleanup", ADMIN.email).catch(() => {});
     const page = await browser.newPage();
-    await page.goto("/#/signup", { waitUntil: "domcontentloaded" });
+    await page.goto("/signup", { waitUntil: "domcontentloaded" });
     await page.getByPlaceholder(/full name|name/i).first().fill(ADMIN.name);
     await page.getByPlaceholder(/email/i).first().fill(ADMIN.email);
     await page.getByPlaceholder(/password/i).first().fill(ADMIN.password);
@@ -25,7 +25,7 @@ test.describe.serial("admin: dashboard + CRUD + queues", () => {
 
   test("dashboard shows live metrics", async ({ page }) => {
     await loginAs(page, ADMIN.email, ADMIN.password);
-    await page.goto("/#/auth/admin/dashboard", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/dashboard", { waitUntil: "domcontentloaded" });
     await expect(
       page.locator("h1", { hasText: /dashboard/i }).first(),
     ).toBeVisible({ timeout: 20000 });
@@ -42,7 +42,7 @@ test.describe.serial("admin: dashboard + CRUD + queues", () => {
 
   test("products list loads + server search works", async ({ page }) => {
     await loginAs(page, ADMIN.email, ADMIN.password);
-    await page.goto("/#/auth/admin/products", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/products", { waitUntil: "domcontentloaded" });
     // Seed catalog on local DB, real catalog on shared DB — either proves
     // the list renders from the backend. Use the page's server-side search
     // so pagination can never hide the assertion target.
@@ -85,7 +85,7 @@ test.describe.serial("admin: dashboard + CRUD + queues", () => {
     }, { pid, API });
     expect(created.status, JSON.stringify(created.body)).toBe(200);
 
-    await page.goto("/#/auth/admin/products", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/products", { waitUntil: "domcontentloaded" });
     await page.getByPlaceholder(/search/i).first().fill("Resistor Kit");
     await expect(page.locator(`text=PW Test Resistor Kit ${pid}`).first()).toBeVisible({ timeout: 20000 });
 
@@ -131,7 +131,7 @@ test.describe.serial("admin: dashboard + CRUD + queues", () => {
       return res.status;
     }, { cid, API });
     expect(mk).toBe(201);
-    await page.goto("/#/auth/admin/categories", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/categories", { waitUntil: "domcontentloaded" });
     await expect(page.locator(`text=${cid}`).first()).toBeVisible({ timeout: 20000 });
     const del = await page.evaluate(async ({ cid, API }) => {
       const res = await fetch(`${API}/api/categories/${cid}`, {

@@ -1,14 +1,9 @@
 import { authClient } from "@/lib/auth-client";
 import { toast } from "sonner";
-import { encrypt } from "../crypt";
-import { generateHashLink } from "@shared/utils/route-util";
+import { origin } from "@shared/utils/route-util";
 import { api } from "../api";
 
 export default function onUserGoogleSignIn(setIsInputDisabled) {
-  function navigate(path) {
-    window.location.href = generateHashLink(path);
-  }
-
   function setInputDisabledState(state) {
     if (typeof setIsInputDisabled === "function") {
       setIsInputDisabled(state);
@@ -23,10 +18,14 @@ export default function onUserGoogleSignIn(setIsInputDisabled) {
             .social(
               {
                 provider: "google",
-                callbackURL: generateHashLink("/?auth=google&success=true"),
-                errorCallbackURL: generateHashLink(
-                  "/login?auth=google&success=false",
-                ),
+                callbackURL: origin()
+                  .path("/")
+                  .query({ auth: "google", success: "true" })
+                  .url(),
+                errorCallbackURL: origin()
+                  .path("/login")
+                  .query({ auth: "google", success: "false" })
+                  .url(),
                 scopes: ["profile", "email", "openid"],
               },
               {
@@ -39,7 +38,7 @@ export default function onUserGoogleSignIn(setIsInputDisabled) {
                 },
               },
             )
-            .then((response) => {
+            .then(() => {
               api.clearSessionCache(); // clear session cache to ensure fresh session data
             })
             .catch((error) => {

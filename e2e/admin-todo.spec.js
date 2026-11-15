@@ -30,7 +30,7 @@ test.describe.serial("admin categories: icon picker + webp logo upload", () => {
 
   test("icon picker + logo upload + create end-to-end", async ({ page }) => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/categories", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/categories", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^categories$/i })).toBeVisible({ timeout: 20000 });
 
     await page.getByRole("button", { name: /new category/i }).click();
@@ -82,7 +82,7 @@ test.describe.serial("admin categories: icon picker + webp logo upload", () => {
 
   test("row shows icon + uploaded logo, cleanup removes category", async ({ page }) => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/categories", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/categories", { waitUntil: "domcontentloaded" });
     const row = page.locator("tr", { hasText: catId });
     await expect(row).toBeVisible({ timeout: 20000 });
     await expect(row.locator('img[alt="PW Todo Cats logo"]')).toBeVisible();
@@ -125,7 +125,7 @@ test.describe.serial("admin orders: dynamic action menu by state", () => {
   };
 
   const searchOrder = async (page) => {
-    await page.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^orders$/i })).toBeVisible({ timeout: 20000 });
     await page.getByPlaceholder("Search orders...").fill(orderId);
     await page.waitForTimeout(1500);
@@ -329,7 +329,7 @@ test.describe.serial("admin products: .md / .csv import", () => {
 
   test("specifications + features import from markdown (replace/append)", async ({ page }) => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/products/new", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/products/new", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^create product$/i })).toBeVisible({ timeout: 20000 });
     await page.waitForTimeout(1500); // hydration settle
 
@@ -375,7 +375,7 @@ test.describe.serial("admin products: .md / .csv import", () => {
 
   test("full product import from .md validates then creates", async ({ page }) => {
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/products/new", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/products/new", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^create product$/i })).toBeVisible({ timeout: 20000 });
 
     const pid = `pwtodo-md-${Date.now().toString(36)}`;
@@ -497,7 +497,7 @@ uno board test, import flow
       localStorage.removeItem("arrayDataForm");
     });
     await loginAs(page, ADMIN_EMAIL, ADMIN_PW);
-    await page.goto("/#/auth/admin/products/new", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/products/new", { waitUntil: "domcontentloaded" });
     await expect(page.locator("h1", { hasText: /^create product$/i })).toBeVisible({ timeout: 20000 });
 
     await page.getByRole("button", { name: /import product/i }).click();

@@ -94,7 +94,7 @@ test.describe.serial("orders: cancel + return lifecycle", () => {
     expect(orderId).toBeTruthy();
 
     // Cancel via the real UI dialog with a meaningful reason.
-    await page.goto("/#/order", { waitUntil: "domcontentloaded" });
+    await page.goto("/order", { waitUntil: "domcontentloaded" });
     await expect(page.locator(`text=${orderId}`).first()).toBeVisible({
       timeout: 20000,
     });
@@ -192,7 +192,7 @@ test.describe.serial("orders: cancel + return lifecycle", () => {
     }
 
     // Customer requests return via UI on the delivered order.
-    await page.goto("/#/order", { waitUntil: "domcontentloaded" });
+    await page.goto("/order", { waitUntil: "domcontentloaded" });
     await expect(page.locator(`text=${order2}`).first()).toBeVisible({
       timeout: 20000,
     });

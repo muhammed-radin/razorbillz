@@ -21,7 +21,7 @@ import analyticsRouter from "./analytics.js";
 import liveEventsRouter from "./liveEvents.js";
 import storeRouter from "./store.js";
 import sendEmail from "../utils/mailer.js";
-import { generateHashLink, origin } from "../shared/utils/route-util.js";
+import { origin } from "../shared/utils/route-util.js";
 
 const router = express.Router();
 
@@ -85,12 +85,17 @@ router.use("/analytics", requireAuth, analyticsRouter);
  * the long-lived stream — is gated by the same owner check. */
 router.use("/live-events", liveEventsRouter);
 
-/* Redirect to front-end */
+/* Redirect to front-end. In a single-host deployment the request origin is
+ * the frontend origin, so it is used when FRONTEND_URL is not configured. */
 router.get("/redirect-app/verify-email", (req, res) => {
+  const baseUrl =
+    process.env.FRONTEND_URL ||
+    `${req.protocol}://${req.get("host")}`;
   res.redirect(
-    origin(process.env.FRONTEND_URL || "http://localhost:5173")
-      .query({ action: "verify-email", status: "success" }, null, true)
-      .hashPathURL(),
+    origin(baseUrl)
+      .path("/")
+      .query({ action: "verify-email", status: "success" })
+      .url(),
   );
 });
 export default router;

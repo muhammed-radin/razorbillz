@@ -1,6 +1,9 @@
 import express from "express";
 import cookieParser from "cookie-parser";
 import logger from "morgan";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import "./utils/env.js"; // deterministic .env loading (Server/.env first)
 import cors from "cors";
 import { toNodeHandler } from "better-auth/node";
@@ -74,6 +77,11 @@ async function initAuth(req, res, next) {
   return toNodeHandler(createAuth(db))(req, res, next);
 }
 
+/* Frontend production build lives in the repo-root `dist` directory. */
+const serverDir = path.dirname(fileURLToPath(import.meta.url));
+const distDir = path.resolve(serverDir, "..", "dist");
+const distIndex = path.join(distDir, "index.html");
+
 const app = express();
 app.set("trust proxy", 1);
 
@@ -116,7 +124,9 @@ app.use(startDB);
 app.use("/api/auth/*splat", authLimiter);
 app.all("/api/auth/*splat", checkDatabaseConnection, initAuth);
 
-app.use(globalApiLimiter);
+/* Limit API traffic only. Static assets and SPA document requests must not
+ * consume the API budget, otherwise one page load can rate-limit itself. */
+app.use("/api", globalApiLimiter);
 app.use(logger("dev"));
 app.use(requestId);
 app.use(telemetryRequestMiddleware);
@@ -154,6 +164,41 @@ initJobs().catch((error) => {
 
 // Unknown API routes -> JSON 404, then central error handler (last).
 app.use("/api", apiNotFound);
+
+/* ---------------------------------------------------------------------------
+ * Frontend hosting (single-host production deployment)
+ *
+ * Everything below only handles non-API requests: `/api/*` was fully
+ * resolved (or 404'd as JSON) above. `express.static` serves the generated
+ * assets, and the final handler returns `index.html` so BrowserRouter deep
+ * links such as `/product/123` work on a hard refresh.
+ * ------------------------------------------------------------------------- */
+app.use(
+  express.static(distDir, {
+    index: false,
+    maxAge: process.env.NODE_ENV === "production" ? "1h" : 0,
+  }),
+);
+
+app.use((req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD") return next();
+  if (req.path === "/api" || req.path.startsWith("/api/")) return next();
+  // Missing files (e.g. an old hashed chunk) should be a real 404, not the
+  // SPA document with a 200 status.
+  if (path.extname(req.path)) return next();
+
+  if (!fs.existsSync(distIndex)) {
+    return res
+      .status(503)
+      .type("text/plain")
+      .send(
+        "Frontend build not found. Run `npm run build` in the project root, then restart the server.",
+      );
+  }
+
+  return res.sendFile(distIndex, (err) => (err ? next(err) : undefined));
+});
+
 app.use(errorHandler);
 
 export default app;

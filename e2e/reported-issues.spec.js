@@ -9,7 +9,7 @@ test.describe("reported issues: verified fixed", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, "seed-admin@example.com", "Admin1234!");
-    await page.goto("/#/auth/admin/orders", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/orders", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(5000);
     expect(errors, `pageerrors: ${errors.join(" | ")}`).toEqual([]);
     const body = await page.locator("body").innerText();
@@ -24,7 +24,7 @@ test.describe("reported issues: verified fixed", () => {
     const errors = [];
     page.on("pageerror", (e) => errors.push(e.message));
     await loginAs(page, "seed-admin@example.com", "Admin1234!");
-    await page.goto("/#/auth/admin/analytics", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/analytics", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(5000);
     expect(errors, `pageerrors: ${errors.join(" | ")}`).toEqual([]);
     const body = await page.locator("body").innerText();
@@ -38,9 +38,9 @@ test.describe("reported issues: verified fixed", () => {
       if (m.text().includes("same key")) warnings.push(m.text().slice(0, 120));
     });
     await loginAs(page, "seed-admin@example.com", "Admin1234!");
-    await page.goto("/#/auth/admin/analytics", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/analytics", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(4000);
-    await page.goto("/#/auth/admin/customers", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/customers", { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(4000);
     expect(warnings, `dup keys: ${warnings.join(" | ")}`).toEqual([]);
     const body = await page.locator("body").innerText();

@@ -44,7 +44,7 @@ const ResetPasswordPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
-  // ── Extract Token from URL (handles HashRouter query & root URL query) ──
+  // ── Extract token from the URL query ──
   const initialToken = useMemo(() => {
     const fromParams = searchParams.get("token");
     if (fromParams) return fromParams;
@@ -239,7 +239,7 @@ const ResetPasswordPage = () => {
 
       toast.promise(
         async () => {
-          const redirectTo = origin().path("/reset-password").hashPathURL();
+          const redirectTo = origin().path("/reset-password").url();
           const { error } = await authClient.requestPasswordReset({
             email,
             redirectTo,
@@ -329,7 +329,7 @@ const ResetPasswordPage = () => {
     if (!emailSentTo || resendCooldown > 0 || isSubmitting) return;
     setIsSubmitting(true);
     try {
-      const redirectTo = origin().path("/reset-password").hashPathURL();
+      const redirectTo = origin().path("/reset-password").url();
       const { error } = await authClient.requestPasswordReset({
         email: emailSentTo,
         redirectTo,

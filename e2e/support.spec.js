@@ -9,7 +9,7 @@ test.describe.serial("support: customer care both sides", () => {
     page,
   }) => {
     customer = await signupAs(page, "care");
-    await page.goto("/#/support", { waitUntil: "domcontentloaded" });
+    await page.goto("/support", { waitUntil: "domcontentloaded" });
     await page.getByRole("button", { name: /new ticket/i }).click();
     await expect(page.locator("#subject")).toBeVisible({ timeout: 20000 });
 
@@ -55,7 +55,7 @@ test.describe.serial("support: customer care both sides", () => {
     browser,
   }) => {
     await loginAs(page, "pw-admin@example.com", "Admin1234!");
-    await page.goto("/#/auth/admin/support", { waitUntil: "domcontentloaded" });
+    await page.goto("/auth/admin/support", { waitUntil: "domcontentloaded" });
     await expect(page.locator(`text=${ticketSubject}`).first()).toBeVisible({
       timeout: 20000,
     });
@@ -78,7 +78,7 @@ test.describe.serial("support: customer care both sides", () => {
     // Customer sees the admin reply after reload.
     const c2 = await browser.newPage();
     await loginAs(c2, customer.email, customer.password);
-    await c2.goto("/#/support", { waitUntil: "domcontentloaded" });
+    await c2.goto("/support", { waitUntil: "domcontentloaded" });
     await expect(c2.locator(`text=${ticketSubject}`).first()).toBeVisible({
       timeout: 20000,
     });
