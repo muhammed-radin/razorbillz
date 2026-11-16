@@ -9,8 +9,13 @@ import { db } from "./db.js";
  * - subtotal = Σ serverPrice × qty
  * - discount: currently unsupported coupons -> must be 0 unless
  *   codes provided in future; reject discount > subtotal.
- * - tax: per-product tax% if present else TAX_RATE_DEFAULT (18).
- *   taxAmount computed on (subtotal - discount).
+ * - tax: per-product tax% when set (> 0), else TAX_RATE_DEFAULT (18).
+ *   Products store `taxExcluded`:
+ *     false (default) -> the price already contains GST. The GST
+ *       component is extracted for invoices but NOT added again.
+ *     true -> GST is added on top of the price.
+ *   `taxAmount` = tax added on top (part of totalAmount).
+ *   `taxIncludedAmount` = GST contained in prices (informational).
  * - shipping: free when taxable >= FREE_SHIPPING_THRESHOLD else fee.
  * - COD fee: flat COD_FEE when method=cod.
  * ========================================================= */
@@ -54,6 +59,41 @@ export function round2(n) {
   return Number(Number(n).toFixed(2));
 }
 
+/** Explicit positive tax rates win; 0/missing means "use the store default". */
+export function resolveTaxRate(tax) {
+  const rate = Number(tax);
+  return Number.isFinite(rate) && rate > 0
+    ? rate
+    : PRICING_DEFAULTS.taxRate;
+}
+
+/**
+ * GST for one line.
+ * - taxExcluded=true : GST is added on top of the line total.
+ * - taxExcluded=false: the line total already contains GST, so the
+ *   included component is price * rate / (100 + rate).
+ */
+export function computeLineTax({ price, quantity = 1, tax, taxExcluded = false }) {
+  const base = Number(price) * Number(quantity);
+  const rate = resolveTaxRate(tax);
+  if (taxExcluded === true) {
+    return {
+      base: round2(base),
+      rate,
+      excluded: true,
+      taxAmount: round2((base * rate) / 100),
+      taxIncludedAmount: 0,
+    };
+  }
+  return {
+    base: round2(base),
+    rate,
+    excluded: false,
+    taxAmount: 0,
+    taxIncludedAmount: round2((base * rate) / (100 + rate)),
+  };
+}
+
 export async function priceOrderItems(items, { method = "razorpay" } = {}) {
   if (!Array.isArray(items) || items.length === 0) {
     throw Object.assign(new Error("Order must contain at least one product"), {
@@ -89,6 +129,13 @@ export async function priceOrderItems(items, { method = "razorpay" } = {}) {
         { code: 400, productId: pid },
       );
     }
+    const taxExcluded = doc.taxExcluded === true;
+    const lineTax = computeLineTax({
+      price: doc.price,
+      quantity: qty,
+      tax: doc.tax,
+      taxExcluded,
+    });
     priced.push({
       productId: pid,
       title: doc.title,
@@ -102,7 +149,10 @@ export async function priceOrderItems(items, { method = "razorpay" } = {}) {
       specialInfo: doc.specialInfo ?? {},
       returnedQuantity: 0,
       refundedQuantity: 0,
-      taxRate: Number(doc.tax ?? PRICING_DEFAULTS.taxRate),
+      taxRate: lineTax.rate,
+      taxExcluded,
+      taxAmount: lineTax.taxAmount,
+      taxIncludedAmount: lineTax.taxIncludedAmount,
       weightKg: Number(doc.weight ?? 0.5),
     });
   }
@@ -110,11 +160,26 @@ export async function priceOrderItems(items, { method = "razorpay" } = {}) {
   const subtotal = round2(
     priced.reduce((t, p) => t + p.price * p.quantity, 0),
   );
-  // Weighted tax rate fallback; storefront uses flat 18 — keep server flat for consistency
-  const taxRate = PRICING_DEFAULTS.taxRate;
   const discountAmount = 0; // coupons not yet supported; client discount ignored
   const taxable = round2(subtotal - discountAmount);
-  const taxAmount = round2((taxable * taxRate) / 100);
+  // Tax added ON TOP of prices (only tax-excluded lines).
+  const taxAmount = round2(
+    priced.reduce((t, p) => t + p.taxAmount, 0),
+  );
+  // GST already contained in tax-inclusive prices (invoice info only).
+  const taxIncludedAmount = round2(
+    priced.reduce((t, p) => t + p.taxIncludedAmount, 0),
+  );
+  // Nominal weighted rate, for display ("GST 18%").
+  const taxRate =
+    subtotal > 0
+      ? round2(
+          priced.reduce(
+            (t, p) => t + p.taxRate * p.price * p.quantity,
+            0,
+          ) / subtotal,
+        )
+      : PRICING_DEFAULTS.taxRate;
   const shippingAmount =
     taxable >= PRICING_DEFAULTS.freeShippingThreshold
       ? 0
@@ -144,12 +209,13 @@ export async function priceOrderItems(items, { method = "razorpay" } = {}) {
     products: priced.map(
       // strip server-only helpers before persisting
       // eslint-disable-next-line no-unused-vars
-      ({ taxRate, weightKg, ...rest }) => rest,
+      ({ weightKg, taxIncludedAmount, ...rest }) => rest,
     ),
     subtotal,
     discount: { codes: [], amount: discountAmount },
     tax: taxRate,
     taxAmount,
+    taxIncludedAmount,
     shippingAmount,
     codFee,
     totalAmount,
@@ -159,4 +225,11 @@ export async function priceOrderItems(items, { method = "razorpay" } = {}) {
   };
 }
 
-export default { priceOrderItems, codEligibility, PRICING_DEFAULTS, round2 };
+export default {
+  priceOrderItems,
+  codEligibility,
+  computeLineTax,
+  resolveTaxRate,
+  PRICING_DEFAULTS,
+  round2,
+};

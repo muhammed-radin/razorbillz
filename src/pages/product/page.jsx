@@ -49,10 +49,12 @@ import {
   Timer,
   Globe,
   AlertTriangle,
+  Receipt,
   ChevronDown,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { currency } from "@/utils/currency";
+import { resolveTaxRate } from "@/utils/tax";
 import StyledMd from "@/components/styled-md";
 
 import {
@@ -391,6 +393,8 @@ const ProductDetailsPage = () => {
     );
   }, [product]);
 
+  const taxRate = useMemo(() => resolveTaxRate(product?.tax), [product?.tax]);
+
   const handleQuantityChange = useCallback(
     (change) => {
       setQuantity((prevQuantity) => {
@@ -602,6 +606,12 @@ const ProductDetailsPage = () => {
             </div>
             <p className="text-sm text-muted-foreground">
               {t("product.freeShippingThreshold", { amount: currency(500) })}
+            </p>
+            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+              <Receipt className="size-4 shrink-0" />
+              {product.taxExcluded
+                ? t("product.taxExcluded", { rate: taxRate })
+                : t("product.taxIncluded", { rate: taxRate })}
             </p>
           </div>
 

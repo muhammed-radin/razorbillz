@@ -220,6 +220,27 @@ export const OrderItemSchema = new Schema(
       min: 1,
     },
 
+    /* Tax snapshot for this line (rate at the time of purchase and
+     * whether that tax was added on top of `price`). `taxAmount` is
+     * the GST attributable to the line, included in the price when
+     * `taxExcluded` is false. */
+    taxRate: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    taxExcluded: {
+      type: Boolean,
+      default: false,
+    },
+
+    taxAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     returnedQuantity: {
       type: Number,
       default: 0,
@@ -685,6 +706,15 @@ export const OrderSchema = new Schema(
     },
 
     taxAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    /* GST already contained in the item prices (tax-inclusive lines).
+     * Informational for invoices; NOT part of totalAmount. `taxAmount`
+     * above is the tax added on top of the item prices. */
+    taxIncludedAmount: {
       type: Number,
       default: 0,
       min: 0,

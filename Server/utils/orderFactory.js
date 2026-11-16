@@ -57,6 +57,7 @@ function buildOrderData({
     discount: priced.discount,
     tax: priced.tax,
     taxAmount: priced.taxAmount,
+    taxIncludedAmount: priced.taxIncludedAmount ?? 0,
     shippingAmount: priced.shippingAmount,
     codFee: priced.codFee,
     totalAmount: priced.totalAmount,

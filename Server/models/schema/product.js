@@ -26,6 +26,10 @@ export const ProductSchema = new Schema(
     stock: { type: Number, required: true },
     brand: { type: String, required: true },
     tax: { type: Number, default: 0 },
+    /* false (default): the selling price already contains GST; the tax
+     * percentage is only used to show the tax component.
+     * true: the tax percentage is charged on top of the selling price. */
+    taxExcluded: { type: Boolean, default: false },
     tags: { type: [String], default: [] },
     keywords: { type: [String], default: [] },
     detailedDescription: { type: String, default: "" },
@@ -114,6 +118,8 @@ export class MinimalProduct {
     tags,
     category,
     stock,
+    tax,
+    taxExcluded,
     metrics,
     meterics,
     owner,
@@ -137,6 +143,8 @@ export class MinimalProduct {
             tags,
             category,
             stock,
+            tax,
+            taxExcluded,
             metrics,
             meterics,
             owner,
@@ -158,6 +166,8 @@ export class MinimalProduct {
     this.tags = product.tags;
     this.category = product.category;
     this.stock = product.stock;
+    this.tax = Number(product.tax) || 0;
+    this.taxExcluded = product.taxExcluded === true;
     this.metrics = product.metrics ?? product.meterics ?? null;
     // Legacy alias: older clients and cached feeds read `meterics`.
     this.meterics = this.metrics;
@@ -182,6 +192,8 @@ ProductSchema.methods.toMinimal = function () {
     tags: this.tags,
     category: this.category,
     stock: this.stock,
+    tax: this.tax,
+    taxExcluded: this.taxExcluded,
     meterics: this.meterics,
     owner: this.owner,
   });

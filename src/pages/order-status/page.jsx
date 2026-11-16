@@ -134,6 +134,7 @@ function buildOrder(raw) {
     discount: d.discount?.amount ?? 0,
     discountCodes: d.discount?.codes ?? [],
     tax: d.taxAmount ?? d.tax ?? 0,
+    taxIncluded: d.taxIncludedAmount ?? 0,
     shipping: d.shippingAmount ?? 0,
     codFee: d.codFee ?? 0,
     total: d.totalAmount ?? subtotal,
@@ -969,10 +970,19 @@ function OrderView({
                   </span>
                 </InfoRow>
               )}
-              <InfoRow
-                label={t("orderStatus.tax")}
-                value={formatMoney(order.tax, order.currency)}
-              />
+              {(order.tax > 0 || order.taxIncluded === 0) && (
+                <InfoRow
+                  label={t("orderStatus.tax")}
+                  value={formatMoney(order.tax, order.currency)}
+                />
+              )}
+              {order.taxIncluded > 0 && (
+                <InfoRow label={t("orderStatus.taxIncluded")}>
+                  <span className="text-muted-foreground">
+                    {formatMoney(order.taxIncluded, order.currency)}
+                  </span>
+                </InfoRow>
+              )}
               <InfoRow
                 label={t("orderStatus.shippingFee")}
                 value={

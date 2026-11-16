@@ -40,6 +40,8 @@ const normalizeCart = (doc) => {
     sku: p.sku,
     category: p.category,
     brand: p.brand,
+    tax: p.tax,
+    taxExcluded: p.taxExcluded === true,
   }));
 };
 
@@ -120,6 +122,8 @@ export const useCartStore = create((set, get) => ({
         sku: product.sku,
         category: product.category,
         brand: product.brand,
+        tax: product.tax,
+        taxExcluded: product.taxExcluded === true,
       });
     }
     writeLocal("guest-cart", items);

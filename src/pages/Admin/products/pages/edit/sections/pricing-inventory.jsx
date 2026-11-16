@@ -76,6 +76,27 @@ export default function PricingInventorySection({ form }) {
                 />
                 <FormField
                     control={form.control}
+                    name="taxExcluded"
+                    render={({ field }) => (
+                        <FormItem className="flex flex-row items-start space-x-3 space-y-0 md:col-span-3">
+                            <FormControl>
+                                <Checkbox
+                                    checked={field.value}
+                                    onCheckedChange={field.onChange}
+                                />
+                            </FormControl>
+                            <div className="space-y-1 leading-none">
+                                <FormLabel>Exclude tax from price</FormLabel>
+                                <FormDescription>
+                                    When checked, the tax percentage above is added on top of the selling price at checkout.
+                                    Leave unchecked when the selling price already includes tax.
+                                </FormDescription>
+                            </div>
+                        </FormItem>
+                    )}
+                />
+                <FormField
+                    control={form.control}
                     name="stock"
                     rules={{ required: "Stock is required" }}
                     render={({ field }) => (

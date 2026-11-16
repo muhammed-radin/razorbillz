@@ -13,6 +13,7 @@ const productSchema = z.object({
   stock: z.number().min(0, "Stock must be a non-negative number"),
   brand: z.string().min(2, "Brand must be at least 2 characters long"),
   tax: z.number().default(0),
+  taxExcluded: z.boolean().optional().default(false),
   tags: z
     .array(z.string().min(2, "Tag must be at least 2 characters long"))
     .min(3, "At least three tag is required")

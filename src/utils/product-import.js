@@ -333,6 +333,7 @@ export function normalizeProductForValidation(p) {
     stock: Math.round(Number(p.stock) || 0),
     brand: String(p.brand ?? "").trim(),
     tax: Number(p.tax) || 0,
+    taxExcluded: p.taxExcluded === true,
     weight: Number(p.weight) || 0,
     rating: Number(p.rating) || 0,
     reviewCount: Math.round(Number(p.reviewCount) || 0),
@@ -385,6 +386,7 @@ price: 999
 originalPrice: 1299
 stock: 10
 tax: 18
+taxExcluded: false
 currency: INR
 isActive: true
 rating: 4.5

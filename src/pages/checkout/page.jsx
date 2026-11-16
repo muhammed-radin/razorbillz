@@ -54,6 +54,7 @@ import {
 } from "@/stores/shop";
 import { paymentsApi, shipmentsApi } from "@/services/shop";
 import { loadRazorpayCheckout, openRazorpayCheckout } from "@/utils/razorpay";
+import { computeLineTax } from "@/utils/tax";
 import {
   validateAddressFields,
   lookupPincode,
@@ -133,17 +134,34 @@ export default function CheckoutPage() {
   }, [addresses, selectedAddress]);
 
   const estimate = useMemo(() => {
-    const subtotal = (items ?? []).reduce(
-      (t, p) => t + Number(p.price ?? 0) * Number(p.quantity ?? 1),
-      0,
+    const lines = (items ?? []).map((item) =>
+      computeLineTax({
+        price: item.price ?? 0,
+        quantity: item.quantity ?? 1,
+        tax: item.tax,
+        taxExcluded: item.taxExcluded === true,
+      }),
     );
+    const subtotal = lines.reduce((t, line) => t + line.base, 0);
     const shipping = subtotal >= 500 || subtotal === 0 ? 0 : 50;
-    const tax = Number(((subtotal * 18) / 100).toFixed(2));
+    // Only tax-excluded products add GST on top; tax-inclusive prices
+    // already contain their share (reported separately, not added).
+    const tax = Number(
+      lines
+        .reduce((t, line) => t + line.taxAmount, 0)
+        .toFixed(2),
+    );
+    const taxIncluded = Number(
+      lines
+        .reduce((t, line) => t + line.taxIncludedAmount, 0)
+        .toFixed(2),
+    );
     const codFee = method === "cod" ? Number(payConfig?.codFee ?? 30) : 0;
     return {
       subtotal: Number(subtotal.toFixed(2)),
       shipping,
       tax,
+      taxIncluded,
       codFee,
       total: Number((subtotal + tax + shipping + codFee).toFixed(2)),
     };
@@ -945,12 +963,22 @@ export default function CheckoutPage() {
                     </dt>
                     <dd>₹{estimate.subtotal.toFixed(2)}</dd>
                   </div>
-                  <div className="flex justify-between">
-                    <dt className="flex items-center gap-1.5 text-muted-foreground">
-                      <Percent className="h-3.5 w-3.5" /> Tax (18% GST)
-                    </dt>
-                    <dd>₹{estimate.tax.toFixed(2)}</dd>
-                  </div>
+                  {(estimate.tax > 0 || estimate.taxIncluded === 0) && (
+                    <div className="flex justify-between">
+                      <dt className="flex items-center gap-1.5 text-muted-foreground">
+                        <Percent className="h-3.5 w-3.5" /> Tax (GST)
+                      </dt>
+                      <dd>₹{estimate.tax.toFixed(2)}</dd>
+                    </div>
+                  )}
+                  {estimate.taxIncluded > 0 && (
+                    <div className="flex justify-between text-muted-foreground">
+                      <dt className="flex items-center gap-1.5">
+                        <Receipt className="h-3.5 w-3.5" /> GST included in prices
+                      </dt>
+                      <dd>₹{estimate.taxIncluded.toFixed(2)}</dd>
+                    </div>
+                  )}
                   <div className="flex justify-between">
                     <dt className="flex items-center gap-1.5 text-muted-foreground">
                       <Truck className="h-3.5 w-3.5" /> Shipping
