@@ -8,7 +8,19 @@ import { useStrictEffect } from "@/utils/hooks/useStrictEffect";
  */
 const inFlightRequests = new Map();
 
-const DEFAULT_TTL_MS = 5 * 60 * 1000; // 5 minutes default TTL
+const DEFAULT_TTL_MS = 60 * 60 * 1000; // 1 hour default TTL
+
+/**
+ * Client-side caches are never allowed to expire sooner than one hour.
+ * Longer explicit TTLs are respected; shorter ones are raised to this floor.
+ */
+const MIN_TTL_MS = 60 * 60 * 1000;
+
+function normalizeTtl(ttl) {
+  const value = Number(ttl);
+  if (!Number.isFinite(value) || value <= 0) return DEFAULT_TTL_MS;
+  return Math.max(value, MIN_TTL_MS);
+}
 
 export const useApiCacheStore = create((set, get) => ({
   /**
@@ -29,12 +41,13 @@ export const useApiCacheStore = create((set, get) => ({
    * @param {string} key - Unique cache key (e.g., 'products:feed', 'category:12')
    * @param {() => Promise<any>} fetcher - Async function making the actual network request
    * @param {Object} [options]
-   * @param {number} [options.ttl=300000] - Time to live in milliseconds
+   * @param {number} [options.ttl=3600000] - Time to live in milliseconds
    * @param {boolean} [options.forceRefresh=false] - Bypass cache and force a new network request
    * @returns {Promise<any>}
    */
   fetchWithCache: async (key, fetcher, options = {}) => {
-    const { ttl = DEFAULT_TTL_MS, forceRefresh = false } = options;
+    const { ttl: requestedTtl = DEFAULT_TTL_MS, forceRefresh = false } = options;
+    const ttl = normalizeTtl(requestedTtl);
     const now = Date.now();
     const entry = get().cache[key];
 
@@ -125,13 +138,14 @@ export const useApiCacheStore = create((set, get) => ({
    * Directly write to cache (e.g. optimistic updates or prefetching).
    */
   setCache: (key, data, ttl = DEFAULT_TTL_MS) => {
+    const entryTtl = normalizeTtl(ttl);
     set((state) => ({
       cache: {
         ...state.cache,
         [key]: {
           data,
           timestamp: Date.now(),
-          ttl,
+          ttl: entryTtl,
           status: "success",
           error: null,
         },
@@ -189,7 +203,8 @@ export const useApiCacheStore = create((set, get) => ({
  * @param {boolean} [options.enabled=true]
  */
 export function useCachedQuery(key, fetcher, options = {}) {
-  const { ttl = DEFAULT_TTL_MS, enabled = true } = options;
+  const { ttl: requestedTtl = DEFAULT_TTL_MS, enabled = true } = options;
+  const ttl = normalizeTtl(requestedTtl);
 
   // Granular atomic selector: only re-render when THIS key changes in the Zustand cache
   const cachedEntry = useApiCacheStore((state) => state.cache[key]);

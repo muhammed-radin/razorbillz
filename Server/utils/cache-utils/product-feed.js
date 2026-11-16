@@ -1,8 +1,12 @@
 import { FeedMold, ShowCaseTab } from "../../models/feed.js";
 import { ProductModel, MinimalProduct } from "../../models/schema/product.js";
-import { useMemory } from "../memory.js";
+import { MIN_CACHE_TTL_MS, useMemory } from "../memory.js";
 
-export const productFeedCache = useMemory(null, "productFeedCache", 60);
+export const productFeedCache = useMemory(
+  null,
+  "productFeedCache",
+  MIN_CACHE_TTL_MS,
+);
 
 productFeedCache.toUpdate(async function populateFeed(memory) {
   const Feed = new FeedMold();
@@ -133,7 +137,7 @@ productFeedCache.toUpdate(async function populateFeed(memory) {
   }));
 
   memory.set(Feed);
-  memory.expireTimeout(1000 * 60 * 60); // expire in 1 hour
+  memory.expireTimeout(MIN_CACHE_TTL_MS); // keep the feed warm for at least 1 hour
 });
 
 export default { productFeedCache };

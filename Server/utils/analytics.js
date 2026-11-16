@@ -1164,7 +1164,7 @@ export async function defineAnalyticsJobs(agenda) {
 }
 
 export async function scheduleAnalyticsJobs(agenda) {
-  await agenda.every("2 minutes", JOB_NAMES.flush);
+  await agenda.every("1 hour", JOB_NAMES.flush);
   await agenda.every("2 hours", JOB_NAMES.reconcileDay);
   await agenda.every("6 hours", JOB_NAMES.reconcileSite);
 }

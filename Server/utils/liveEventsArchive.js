@@ -28,7 +28,7 @@ const RETENTION_MS = 24 * 60 * 60 * 1000;
 const FILE_RETENTION_MS = 48 * 60 * 60 * 1000;
 const FLUSH_MS = 15_000;
 const MAX_BUFFER_ITEMS = 5_000;
-const READ_CACHE_MS = 5_000;
+const READ_CACHE_MS = 60 * 60 * 1000;
 /* One day of telemetry can be large. Reads only need the newest slice;
  * capping per file keeps the owner endpoint fast and memory-bounded. */
 const MAX_READ_BYTES_PER_FILE = 16 * 1024 * 1024;

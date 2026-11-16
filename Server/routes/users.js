@@ -408,8 +408,8 @@ router.get(
         globalMemory?.setLocalMemory(
           req.url,
           { ...result, fromCache: true },
-          60 * 2,
-        ); // Cache for 2 minutes
+          60 * 60,
+        ); // Cache for 1 hour
         res.json(result);
       })
       .catch((err) => {

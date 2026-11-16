@@ -127,7 +127,7 @@ export function ReviewRatingSection({ productId }) {
               count,
             };
           },
-          { ttl: 2 * 60 * 1000, forceRefresh: force },
+          { ttl: 60 * 60 * 1000, forceRefresh: force },
         )
         .then((payload) => {
           if (requestIdRef.current !== requestId) return payload?.reviews;

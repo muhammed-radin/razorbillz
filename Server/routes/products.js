@@ -176,7 +176,7 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
   productMemoryCache.setLocalMemory(
     req.url,
     { ...responseData, fromCache: true },
-    60 * 2, // two minutes
+    60 * 60, // one hour
   );
 
   res.json(responseData);
@@ -507,7 +507,7 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
       productMemoryCache.setLocalMemory(
         req.url,
         { ...responsePayload, fromCache: true },
-        fallback === "random" ? 60 * 5 : 60 * 60 * 24,
+        fallback === "random" ? 60 * 60 : 60 * 60 * 24,
       );
     }
 

@@ -716,7 +716,7 @@ export async function defineInteractionJobs(agenda) {
 }
 
 export async function scheduleInteractionJobs(agenda) {
-  await agenda.every("5 minutes", "interactions:flush");
+  await agenda.every("1 hour", "interactions:flush");
 }
 
 export function getInteractionDebugState() {

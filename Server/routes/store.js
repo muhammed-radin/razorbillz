@@ -19,7 +19,7 @@ import {
 const router = express.Router();
 
 function respond(res, lang) {
-  res.set("Cache-Control", "public, max-age=300");
+  res.set("Cache-Control", "public, max-age=3600");
   res.json({
     store: resolveStore(lang),
     languages: STORE_LOCALES,

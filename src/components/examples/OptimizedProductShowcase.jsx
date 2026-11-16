@@ -115,7 +115,7 @@ export default function OptimizedProductShowcase() {
       const res = await api.client.get("/api/products/feed");
       return res.data?.latest || res.data?.products || [];
     },
-    { ttl: 10 * 60 * 1000 } // 10 minute cache TTL
+    { ttl: 60 * 60 * 1000 } // 1 hour cache TTL
   );
 
   // 2. Stable Handler: Memoized with useCallback so Child components do NOT re-render on parent typing

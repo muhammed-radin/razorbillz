@@ -502,7 +502,7 @@ router.get(
           ...result,
           fromCache: true,
         },
-        60 * 2,
+        60 * 60,
       );
 
       /* Decrypt-on-read: shipping/billing snapshots are sealed at rest

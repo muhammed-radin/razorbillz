@@ -1,5 +1,20 @@
 import { db } from "./db.js";
 
+/**
+ * Minimum lifetime for any cached value: one hour.
+ *
+ * Cache entries may live longer, but a shorter TTL is treated as a mistake
+ * and silently raised to this floor. This keeps every cache (global stores,
+ * per-route response snapshots and product feeds) consistently warm.
+ */
+export const MIN_CACHE_TTL_MS = 60 * 60 * 1000;
+
+function normalizeCacheTtlMs(timeout) {
+  const value = Number(timeout);
+  if (!Number.isFinite(value) || value <= 0) return MIN_CACHE_TTL_MS;
+  return Math.max(value, MIN_CACHE_TTL_MS);
+}
+
 export class Memory {
   constructor(data) {
     this._memory = data;
@@ -28,11 +43,12 @@ export class Memory {
   }
 
   expireTimeout(timeout) {
-    this.expireTime = new Date(Date.now() + timeout);
+    const ttlMs = normalizeCacheTtlMs(timeout);
+    this.expireTime = new Date(Date.now() + ttlMs);
     setTimeout(() => {
       this.isExpired = true;
       this._memory = null;
-    }, timeout);
+    }, ttlMs);
   }
 
   async expire() {
@@ -59,9 +75,11 @@ export class Memory {
     url = url.toLowerCase();
     this.locals[url] = data;
     if (timeout) {
+      // `timeout` is expressed in seconds here; clamp to the 1 hour floor.
+      const ttlMs = normalizeCacheTtlMs(Number(timeout) * 1000);
       setTimeout(() => {
         delete this.locals[url];
-      }, timeout * 1000); // Convert seconds to milliseconds
+      }, ttlMs);
     }
   }
   getLocalMemory(url) {

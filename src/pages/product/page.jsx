@@ -233,7 +233,7 @@ const ProductDetailsPage = () => {
           const response = await api.client.get(api.products(id));
           return response.data.products || response.data || null;
         },
-        { ttl: 5 * 60 * 1000 }
+        { ttl: 60 * 60 * 1000 }
       )
       .then((data) => {
         setProduct(data);
@@ -258,7 +258,7 @@ const ProductDetailsPage = () => {
               const data = await interactionsApi.mine(id);
               return data || {};
             },
-            { ttl: 60 * 1000 }
+            { ttl: 60 * 60 * 1000 }
           )
           .then((doc) => {
             const nextInteraction = {
@@ -297,7 +297,7 @@ const ProductDetailsPage = () => {
             ? data
             : (data.products ?? data.result ?? []);
         },
-        { ttl: 5 * 60 * 1000 }
+        { ttl: 60 * 60 * 1000 }
       )
       .then((list) => {
         setSimilar(list);

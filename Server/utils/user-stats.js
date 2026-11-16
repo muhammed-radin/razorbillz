@@ -240,7 +240,7 @@ export async function defineUserStatsJobs(agenda) {
 }
 
 export async function scheduleUserStatsJobs(agenda) {
-  await agenda.every("2 minutes", "user-stats:flush");
+  await agenda.every("1 hour", "user-stats:flush");
 }
 
 export function getUserStatsDebugState() {
