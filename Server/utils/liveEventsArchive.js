@@ -41,6 +41,11 @@ let flushTimer = null;
 let flushPromise = null;
 let loadCache = { at: 0, entries: null };
 
+/** Drop the archive read snapshot so the next owner read sees new files. */
+export function invalidateArchiveReadCache() {
+  loadCache = { at: 0, entries: null };
+}
+
 function dayKey(timestamp) {
   return new Date(timestamp).toISOString().slice(0, 10);
 }
@@ -150,7 +155,7 @@ export async function flushArchive() {
   flushPromise = (async () => {
     try {
       await writeEntries(entries);
-      loadCache = { at: 0, entries: null };
+      invalidateArchiveReadCache();
       await pruneOldFiles();
     } finally {
       inFlightEntries = [];

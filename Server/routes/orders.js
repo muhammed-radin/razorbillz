@@ -5,7 +5,11 @@ import {
   requireAuth,
 } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
-import { useMemory } from "../utils/memory.js";
+import { globalMemory } from "../utils/cache-utils/global-cache.js";
+import {
+  invalidateOrderCaches,
+  orderListCacheKey,
+} from "../utils/cacheInvalidation.js";
 import { priceOrderItems } from "../utils/orderPricing.js";
 import { assertCartMatchesServerCart } from "../utils/cartValidation.js";
 import { createOrderRecord, releaseOrderStock, decryptOrderAddresses } from "../utils/orderFactory.js";
@@ -304,16 +308,16 @@ const router = express.Router();
  * CACHE
  * ========================================================= */
 
-const globalMemory = typeof useMemory === "function" ? useMemory() : null;
-
 /* Any non-GET order mutation can change what /list returns (statuses,
  * cancellation/return subdocs, totals). Invalidate cached list responses
- * after the response is sent so admin queues never go stale. */
+ * after the response is sent so admin queues never go stale. The global
+ * event listener in `cacheInvalidation.js` also covers mutations that
+ * happen through payments/shipments routes. */
 router.use((req, res, next) => {
   if (req.method !== "GET" && typeof res.on === "function") {
     res.on("finish", () => {
       try {
-        globalMemory?.clearByPrefix?.("/list?");
+        invalidateOrderCaches();
       } catch {
         // Cache invalidation is best-effort; never break the response.
       }
@@ -368,8 +372,9 @@ router.get(
   async (req, res) => {
     try {
       const realtime = req.query?.realtime === "true";
+      const cacheKey = orderListCacheKey(req.url);
 
-      const cached = !realtime && globalMemory?.getLocalMemory(req.url);
+      const cached = !realtime && globalMemory?.getLocalMemory(cacheKey);
 
       if (cached) {
         /* Cache holds the SEALED payload (no plaintext in memory
@@ -497,7 +502,7 @@ router.get(
       };
 
       globalMemory?.setLocalMemory(
-        req.url,
+        cacheKey,
         {
           ...result,
           fromCache: true,

@@ -13,9 +13,10 @@ import {
   queueCommentLikeDelta,
 } from "../utils/commentLikes.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
-import { productMemoryCache } from "../utils/cache-utils/product-data.js";
-import { productFeedCache } from "../utils/cache-utils/product-feed.js";
-import { productStatusCache } from "../utils/cache-utils/product-status.js";
+import {
+  commentListCacheKey,
+  invalidateCommentCaches,
+} from "../utils/cacheInvalidation.js";
 import {
   encryptField,
   decryptField,
@@ -24,30 +25,13 @@ import {
 const router = express.Router();
 
 /* =========================================================
- * Cache helpers
+ * Cache keys
  * ---------------------------------------------------------
  * Comment lists are cached per user (because "my comments first"
- * depends on the viewer). Any create/update/delete must drop every
- * cached page for that product, otherwise counts go stale.
+ * depends on the viewer). Deleting the product's namespace is handled
+ * centrally by `cacheInvalidation.js` on comment events, so every
+ * create/update/delete/like drops all pages for that product.
  * ========================================================= */
-
-function invalidateCommentCaches(productId) {
-  const id = String(productId || "");
-  if (!id) return;
-
-  const locals = globalMemory?.locals || {};
-  for (const key of Object.keys(locals)) {
-    if (key.includes(id)) delete locals[key];
-  }
-
-  try {
-    productMemoryCache?.clearByPrefix?.("");
-    productFeedCache?.expire?.();
-    productStatusCache?.update?.().catch?.(() => {});
-  } catch (error) {
-    console.error("[comments] cache invalidation failed:", error?.message);
-  }
-}
 
 function reportError(error, data = {}) {
   evt.fire(
@@ -327,7 +311,7 @@ router.get("/:productId", requireSession, async (req, res) => {
   const userId = req.user?.id ?? null;
 
   // Cache must be user-specific because comment ordering depends on userId
-  const cacheKey = `${req.url}:user:${userId ?? "guest"}`;
+  const cacheKey = commentListCacheKey(productId, userId, req.url);
 
   if (
     globalMemory?.getLocalMemory(cacheKey) &&
@@ -530,30 +514,6 @@ router.delete("/:productId", requireAuth, async (req, res) => {
     console.error("Error deleting comment:", error);
     return res.status(500).json({ error: "Failed to delete comment" });
   }
-});
-
-/* =========================================================
- * Events
- * ---------------------------------------------------------
- * Counts are updated inline (above) so they are instant. These
- * listeners only keep caches coherent if a comment event is fired
- * from another module.
- * ========================================================= */
-
-evt.on(Evts.PRODUCT_COMMENTED, ({ comment } = {}) => {
-  if (comment?.productId) invalidateCommentCaches(comment.productId);
-});
-
-evt.on(Evts.PRODUCT_COMMENT_UPDATED, ({ comment } = {}) => {
-  if (comment?.productId) invalidateCommentCaches(comment.productId);
-});
-
-evt.on(Evts.PRODUCT_COMMENT_DELETED, ({ comment } = {}) => {
-  if (comment?.productId) invalidateCommentCaches(comment.productId);
-});
-
-evt.on(Evts.PRODUCT_COMMENT_LIKED, ({ comment } = {}) => {
-  if (comment?.productId) invalidateCommentCaches(comment.productId);
 });
 
 // FEATURE: TODO: comment interaction such as like, replay

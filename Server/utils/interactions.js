@@ -5,11 +5,7 @@ import {
   getAgenda,
   useAgenda,
 } from "./agenda.js";
-import {
-  productMemoryCache,
-} from "./cache-utils/product-data.js";
-import { productFeedCache } from "./cache-utils/product-feed.js";
-import { productStatusCache } from "./cache-utils/product-status.js";
+import { invalidateProductCaches } from "./cacheInvalidation.js";
 
 /* =========================================================
  * Buffered product interactions
@@ -358,11 +354,9 @@ async function flushRatings(snapshot) {
   }
 }
 
-function invalidateProductCaches() {
+function invalidateProductMetricsCaches() {
   try {
-    productMemoryCache?.clearByPrefix("");
-    productFeedCache?.expire();
-    productStatusCache?.update().catch(() => {});
+    invalidateProductCaches();
   } catch (error) {
     console.error("[interactions] cache invalidation failed:", error?.message);
   }
@@ -467,7 +461,7 @@ export async function flushInteractionBuffers() {
     result.wishlists ||
     result.ratings;
 
-  if (wroteSomething) invalidateProductCaches();
+  if (wroteSomething) invalidateProductMetricsCaches();
 
   return result;
 }
@@ -489,7 +483,7 @@ export function flushRatingBuffer() {
 
   ratingFlushPromise = flushRatings(snapshot)
     .then((count) => {
-      if (count) invalidateProductCaches();
+      if (count) invalidateProductMetricsCaches();
       return { count };
     })
     .catch((error) => {

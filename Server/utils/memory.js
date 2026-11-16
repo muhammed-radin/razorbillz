@@ -22,10 +22,14 @@ export class Memory {
     this.createdAt = new Date();
     this.expireTime = null;
     this.updateFn = () => {};
+    this._expireTimer = null;
+    this._localTimers = new Map();
   }
 
   set(newData) {
     this._memory = newData;
+    this.isExpired = false;
+    this.createdAt = new Date();
     return this._memory;
   }
 
@@ -44,15 +48,27 @@ export class Memory {
 
   expireTimeout(timeout) {
     const ttlMs = normalizeCacheTtlMs(timeout);
+    if (this._expireTimer) {
+      clearTimeout(this._expireTimer);
+      this._expireTimer = null;
+    }
+    this.isExpired = false;
     this.expireTime = new Date(Date.now() + ttlMs);
-    setTimeout(() => {
+    this._expireTimer = setTimeout(() => {
       this.isExpired = true;
       this._memory = null;
+      this._expireTimer = null;
     }, ttlMs);
+    this._expireTimer.unref?.();
   }
 
   async expire() {
+    if (this._expireTimer) {
+      clearTimeout(this._expireTimer);
+      this._expireTimer = null;
+    }
     this.isExpired = true;
+    this.expireTime = null;
     this._memory = null;
   }
 
@@ -74,12 +90,20 @@ export class Memory {
   setLocalMemory(url, data, timeout) {
     url = url.toLowerCase();
     this.locals[url] = data;
+    const existing = this._localTimers.get(url);
+    if (existing) {
+      clearTimeout(existing);
+      this._localTimers.delete(url);
+    }
     if (timeout) {
       // `timeout` is expressed in seconds here; clamp to the 1 hour floor.
       const ttlMs = normalizeCacheTtlMs(Number(timeout) * 1000);
-      setTimeout(() => {
+      const timer = setTimeout(() => {
         delete this.locals[url];
+        this._localTimers.delete(url);
       }, ttlMs);
+      timer.unref?.();
+      this._localTimers.set(url, timer);
     }
   }
   getLocalMemory(url) {
@@ -88,6 +112,11 @@ export class Memory {
   }
   clearLocalMemory(url) {
     url = url.toLowerCase();
+    const timer = this._localTimers.get(url);
+    if (timer) {
+      clearTimeout(timer);
+      this._localTimers.delete(url);
+    }
     if (this.locals[url]) {
       delete this.locals[url];
     }
@@ -95,7 +124,13 @@ export class Memory {
   clearByPrefix(prefix) {
     const p = String(prefix ?? "").toLowerCase();
     for (const key of Object.keys(this.locals)) {
-      if (key.startsWith(p)) delete this.locals[key];
+      if (key.startsWith(p)) this.clearLocalMemory(key);
+    }
+  }
+  /** Drop every per-route snapshot, keeping only the primary value. */
+  clearLocalMemoryAll() {
+    for (const key of Object.keys(this.locals)) {
+      this.clearLocalMemory(key);
     }
   }
 }

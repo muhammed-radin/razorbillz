@@ -11,6 +11,11 @@ import {
   requireSession,
 } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
+import {
+  invalidateProductCaches,
+  productListCacheKey,
+  productSimilarCacheKey,
+} from "../utils/cacheInvalidation.js";
 import { evt, Evts, ProductEvent, ErrorEvent } from "../utils/events.manage.js";
 
 const router = express.Router();
@@ -18,8 +23,9 @@ const router = express.Router();
 /* GET */
 router.get("/", requireSession, passUserAuth, async function (req, res, next) {
   const userId = req.user?.id;
+  const cacheKey = productListCacheKey(req.url);
   if (
-    productMemoryCache.getLocalMemory(req.url) &&
+    productMemoryCache.getLocalMemory(cacheKey) &&
     req.query.realtime !== "true"
   ) {
     evt.fire(
@@ -33,7 +39,7 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
         userId,
       }),
     );
-    return res.json(productMemoryCache.getLocalMemory(req.url));
+    return res.json(productMemoryCache.getLocalMemory(cacheKey));
   }
 
   let limit = parseInt(req.query?.limit) || parseInt(req.body?.limit) || 40;
@@ -174,7 +180,7 @@ router.get("/", requireSession, passUserAuth, async function (req, res, next) {
   );
 
   productMemoryCache.setLocalMemory(
-    req.url,
+    cacheKey,
     { ...responseData, fromCache: true },
     60 * 60, // one hour
   );
@@ -290,6 +296,7 @@ router.post(
     console.log("--> :New product data:", newProduct);
 
     const created = await ProductModel.create(newProduct);
+    invalidateProductCaches();
     evt.fire(
       Evts.PRODUCT_CREATED,
       new ProductEvent({
@@ -316,6 +323,7 @@ router.put(
     const productid = req.params.productid;
     const product = req.body;
     const updated = await ProductModel.updateOne({ id: productid }, product);
+    invalidateProductCaches();
     evt.fire(
       Evts.PRODUCT_UPDATED,
       new ProductEvent({
@@ -342,6 +350,7 @@ router.delete(
     const productid = req.params.productid;
     const deleted = await ProductModel.deleteOne({ id: productid });
     if ((deleted?.deletedCount ?? 0) > 0) {
+      invalidateProductCaches();
       evt.fire(
         Evts.PRODUCT_DELETED,
         new ProductEvent({
@@ -364,13 +373,14 @@ router.delete(
 router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
   try {
     const productId = req.params.id;
+    const cacheKey = productSimilarCacheKey(req.url);
 
     // 1. Check Memory Cache
     if (
-      productMemoryCache.getLocalMemory(req.url) &&
+      productMemoryCache.getLocalMemory(cacheKey) &&
       req.query.realtime !== "true"
     ) {
-      return res.json(productMemoryCache.getLocalMemory(req.url));
+      return res.json(productMemoryCache.getLocalMemory(cacheKey));
     }
 
     const parsedLimit =
@@ -505,7 +515,7 @@ router.get("/similar/:id", requireSession, passUserAuth, async (req, res) => {
 
     if (finalProducts.length > 0) {
       productMemoryCache.setLocalMemory(
-        req.url,
+        cacheKey,
         { ...responsePayload, fromCache: true },
         fallback === "random" ? 60 * 60 : 60 * 60 * 24,
       );

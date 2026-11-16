@@ -1,5 +1,6 @@
 import { db, checkCurrentConnection } from "./db.js";
 import { evt, Evts } from "./events.manage.js";
+import { invalidateUserListCaches } from "./cacheInvalidation.js";
 
 /* =========================================================
  * Buffered user statistics
@@ -206,6 +207,12 @@ export async function flushUserStats() {
       matched: result.matchedCount ?? 0,
       modified: result.modifiedCount ?? 0,
     }))
+    .then((result) => {
+      /* Agenda and threshold-triggered flushes both land here, so the
+       * admin listing is dropped exactly when its stats change. */
+      invalidateUserListCaches();
+      return result;
+    })
     .catch((error) => {
       // Never lose counters: merge the snapshot back for the next flush.
       for (const [userId, stats] of snapshot.entries()) {

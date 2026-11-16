@@ -1,6 +1,7 @@
 import axios from "axios";
 import { decrypt, decryptObj, encrypt, decryptField } from "./crypt";
 import { authClient } from "@/lib/auth-client";
+import { installClientCacheInvalidation } from "./cacheInvalidation";
 
 const apiBase = import.meta.env.VITE_API_ENDPOINT;
 const ACTION_HEADER = {
@@ -228,6 +229,10 @@ const api = {
     },
   },
 };
+
+/* Successful writes drop the matching client caches; the next read
+ * rebuilds them from the (already invalidated) server cache. */
+installClientCacheInvalidation(api.client);
 
 /* =========================================================
  * GET request coalescing.

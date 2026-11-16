@@ -7,6 +7,10 @@ import {
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import { getAuthInstance } from "../utils/auth.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
+import {
+  invalidateUserCaches,
+  userListCacheKey,
+} from "../utils/cacheInvalidation.js";
 import settingsRouter from "./settings.js";
 import {
   encryptField,
@@ -201,6 +205,8 @@ router.post("/profile", requireAuth, passUserAuth, async (req, res) => {
       await db.collection("users").updateOne({ id: userId }, mirrorUpdate);
     }
 
+    invalidateUserCaches();
+
     res.json({
       message: "Profile updated successfully",
       result,
@@ -240,11 +246,12 @@ router.get(
   requireAdmin,
   requirePermission({ user: ["list"] }),
   async function (req, res) {
+    const cacheKey = userListCacheKey(req.url);
     if (
-      globalMemory?.getLocalMemory(req.url) &&
+      globalMemory?.getLocalMemory(cacheKey) &&
       req.query?.realtime !== "true"
     ) {
-      return res.json(globalMemory.getLocalMemory(req.url));
+      return res.json(globalMemory.getLocalMemory(cacheKey));
     }
     let query = {};
     let result = {};
@@ -406,7 +413,7 @@ router.get(
         };
 
         globalMemory?.setLocalMemory(
-          req.url,
+          cacheKey,
           { ...result, fromCache: true },
           60 * 60,
         ); // Cache for 1 hour
@@ -534,6 +541,7 @@ router.patch(
       if (result.matchedCount === 0) {
         return res.status(404).json({ error: "User not found" });
       }
+      invalidateUserCaches();
       res.json({ success: true });
     } catch (err) {
       console.error("Error updating user status:", err);
@@ -636,6 +644,8 @@ router.put(
       }
 
       const updated = await db.collection("users").findOne({ id: userId });
+
+      invalidateUserCaches();
 
       res.status(200).json({
         success: true,

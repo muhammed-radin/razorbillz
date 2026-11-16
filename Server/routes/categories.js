@@ -1,6 +1,10 @@
 import express from "express";
 import { Category } from "../models/schema/categories.js";
 import { globalMemory } from "../utils/cache-utils/global-cache.js";
+import {
+  CATEGORY_CACHE_KEY,
+  invalidateCategoryCaches,
+} from "../utils/cacheInvalidation.js";
 import { requireAuth } from "../utils/middlewares/reqiuredAuth.js";
 import { requireAdmin, requirePermission } from "../utils/middlewares/RBAC.js";
 import {
@@ -14,15 +18,15 @@ const router = express.Router();
 /* GET users listing. */
 router.get("/", function (req, res) {
   if (
-    globalMemory?.getLocalMemory("categories") &&
+    globalMemory?.getLocalMemory(CATEGORY_CACHE_KEY) &&
     req.query?.realtime !== "true"
   ) {
-    return res.json(globalMemory.getLocalMemory("categories"));
+    return res.json(globalMemory.getLocalMemory(CATEGORY_CACHE_KEY));
   }
 
   Category.find({})
     .then((categories) => {
-      globalMemory.setLocalMemory("categories", categories, 60 * 60); // Cache for 1 hour
+      globalMemory.setLocalMemory(CATEGORY_CACHE_KEY, categories, 60 * 60); // Cache for 1 hour
       res.json(categories);
     })
     .catch((err) => {
@@ -65,7 +69,7 @@ router.post(
           ),
         );
         // Writes must invalidate the list cache or new categories stay invisible.
-        globalMemory?.clearLocalMemory?.("categories");
+        invalidateCategoryCaches();
         res.status(201).json(category);
       })
       .catch((err) => {
@@ -124,7 +128,7 @@ router.put(
             updatedCategory,
           ),
         );
-        globalMemory?.clearLocalMemory?.("categories");
+        invalidateCategoryCaches();
         res.json(updatedCategory);
       })
       .catch((err) => {
@@ -157,7 +161,7 @@ router.delete(
             deletedCategory,
           ),
         );
-        globalMemory?.clearLocalMemory?.("categories");
+        invalidateCategoryCaches();
         res.json({ message: "Category deleted successfully" });
       })
       .catch((err) => {

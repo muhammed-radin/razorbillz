@@ -30,6 +30,7 @@ import { evt } from "./utils/events.manage.js";
 import { telemetryRequestMiddleware } from "./utils/liveEvents.js";
 import tallyDebug from "./utils/debug.js";
 import { initJobs } from "./utils/jobs.js";
+import "./utils/cacheInvalidation.js"; // event-driven cache deletion (must load once)
 import { storeConfig } from "./shared/store.config.js";
 
 validateStartupConfig();
