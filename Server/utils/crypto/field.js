@@ -168,7 +168,9 @@ function sealAddress(address, { context = "address" } = {}) {
       sealed[key] = value;
       continue;
     }
-    sealed[key] = encryptField(value, { context: `${context}:${key}` });
+    sealed[key] = encryptField(unwrapLegacyIfPossible(value), {
+      context: `${context}:${key}`,
+    });
     if (typeof value === "string" && ADDRESS_INDEX_SPEC[key]) {
       idxValues[key] = value;
     }
@@ -210,6 +212,20 @@ export function decryptAddressBook(list = []) {
  * through openAddressObject; courier/ops building a payload opens
  * transiently (see routes/shipments.js). Order-wide ops search keys on
  * fulfillment.deliveryPincode (kept plaintext, low sensitivity). */
+
+/* Guard against ciphertext-in-ciphertext: a client with a broken/
+ * missing legacy key (VITE_CRYPTED) can send a still-encrypted
+ * `U2FsdGVkX1…` value inside an address object. Sealing that verbatim
+ * would double-wrap it into an envelope that can never be opened into
+ * plaintext. Instead, open the legacy layer first (server env keys)
+ * and seal the plaintext; values that fail to open are sealed as-is
+ * (best effort) and will read back through the legacy branch. */
+function unwrapLegacyIfPossible(value) {
+  if (typeof value !== "string" || !isLegacyEncrypted(value)) return value;
+  const opened = decryptField(value, { strict: false });
+  return typeof opened === "string" && opened && opened !== value ? opened : value;
+}
+
 export function sealAddressObject(address) {
   if (!address || typeof address !== "object") return address;
   const sealed = {};
@@ -218,7 +234,9 @@ export function sealAddressObject(address) {
       sealed[key] = value; // ignore nested/non-string junk (strict schema would strip it)
       continue;
     }
-    sealed[key] = encryptField(value, { context: `order:${key}` });
+    sealed[key] = encryptField(unwrapLegacyIfPossible(value), {
+      context: `order:${key}`,
+    });
   }
   return sealed;
 }

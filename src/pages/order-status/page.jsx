@@ -286,11 +286,12 @@ function StatusBadge({ status, className }) {
     <Badge
       variant="outline"
       className={cn(
+        "gap-1.5 whitespace-nowrap",
         meta?.className ?? "border-transparent bg-muted text-muted-foreground",
         className,
       )}
     >
-      <Icon className="size-3.5" />
+      <Icon className="size-3.5 shrink-0" />
       {label}
     </Badge>
   );
@@ -303,9 +304,10 @@ function PaymentBadge({ status }) {
   return (
     <Badge
       variant="outline"
-      className={
-        meta?.className ?? "border-transparent bg-muted text-muted-foreground"
-      }
+      className={cn(
+        "whitespace-nowrap",
+        meta?.className ?? "border-transparent bg-muted text-muted-foreground",
+      )}
     >
       {label}
     </Badge>
@@ -430,7 +432,7 @@ function CopyButton({ value, label }) {
           type="button"
           variant="ghost"
           size="icon"
-          className="size-7 text-muted-foreground hover:text-foreground"
+          className="size-7 shrink-0 text-muted-foreground hover:text-foreground"
           onClick={copy}
           disabled={!value}
           aria-label={resolvedLabel}
@@ -451,12 +453,14 @@ function CopyButton({ value, label }) {
 
 function InfoRow({ icon: Icon, label, value, children }) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <span className="flex items-center gap-2 text-muted-foreground">
+    <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-1">
+      <span className="flex min-w-0 items-center gap-2 text-muted-foreground">
         {Icon && <Icon className="size-4 shrink-0" />}
         {label}
       </span>
-      <span className="text-right font-medium">{children ?? value}</span>
+      <span className="ml-auto min-w-0 break-words text-right font-medium">
+        {children ?? value}
+      </span>
     </div>
   );
 }
@@ -464,15 +468,15 @@ function InfoRow({ icon: Icon, label, value, children }) {
 function SectionCard({ icon: Icon, title, description, action, children }) {
   return (
     <Card className="shadow-none">
-      <CardHeader className="pb-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2">
+      <CardHeader className="px-4 pb-4 sm:px-6">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             {Icon && (
-              <span className="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
                 <Icon className="size-4" />
               </span>
             )}
-            <div>
+            <div className="min-w-0">
               <CardTitle className="text-base">{title}</CardTitle>
               {description && (
                 <CardDescription className="text-xs">
@@ -481,10 +485,10 @@ function SectionCard({ icon: Icon, title, description, action, children }) {
               )}
             </div>
           </div>
-          {action}
+          {action && <div className="shrink-0">{action}</div>}
         </div>
       </CardHeader>
-      <CardContent>{children}</CardContent>
+      <CardContent className="px-4 sm:px-6">{children}</CardContent>
     </Card>
   );
 }
@@ -642,7 +646,7 @@ export default function OrderStatusPage() {
     <TooltipProvider delayDuration={200}>
       <StoreMeta title={t("orderStatus.title")} noIndex />
 
-      <div className={"mx-auto w-full max-w-6xl px-4 py-6 sm:py-10"}>
+      <div className={"mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 sm:py-10"}>
         {/* Breadcrumb */}
         {state === "ready" && (
           <Breadcrumb className="mb-4">
@@ -780,11 +784,11 @@ function OrderView({
       <Card className="overflow-hidden shadow-none">
         <div className="border-b bg-gradient-to-r from-primary/5 via-transparent to-transparent p-5 sm:p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-            <div className="flex items-start gap-4">
+            <div className="flex min-w-0 items-start gap-3 sm:gap-4">
               <span className="flex size-12 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
                 <CheckCircle2 className="size-6" />
               </span>
-              <div>
+              <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
                   <h1 className="text-xl font-bold tracking-tight sm:text-2xl">
                     {t("orderStatus.title")}
@@ -796,7 +800,7 @@ function OrderView({
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -852,8 +856,8 @@ function OrderView({
           <Separator className="my-6" />
 
           {order.status === "cancelled" ? (
-            <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
-              <XCircle className="size-4 shrink-0" />
+            <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm text-destructive">
+              <XCircle className="mt-0.5 size-4 shrink-0" />
               {t("orderStatus.cancelledNotice")}
             </div>
           ) : (
@@ -864,7 +868,7 @@ function OrderView({
 
       <div className="grid gap-6 lg:grid-cols-3">
         {/* Left column */}
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           <SectionCard
             icon={Package}
             title={t("orderStatus.items")}
@@ -875,8 +879,8 @@ function OrderView({
             <div className="space-y-4">
               {order.items.map((item, index) => (
                 <div key={item.id}>
-                  <div className="flex gap-4">
-                    <div className="w-20 shrink-0">
+                  <div className="flex gap-3 sm:gap-4">
+                    <div className="w-16 shrink-0 sm:w-20">
                       <AspectRatio
                         ratio={1}
                         className="overflow-hidden rounded-lg border bg-muted"
@@ -896,7 +900,9 @@ function OrderView({
                       </AspectRatio>
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="font-medium leading-snug">{item.name}</h3>
+                      <h3 className="break-words font-medium leading-snug">
+                        {item.name}
+                      </h3>
                       <div className="mt-1 flex flex-wrap gap-1.5">
                         {item.brand && (
                           <Badge variant="secondary" className="font-normal">
@@ -921,7 +927,7 @@ function OrderView({
                         {t("orderStatus.quantity")}: {item.quantity}
                       </p>
                     </div>
-                    <div className="text-right">
+                    <div className="shrink-0 text-right">
                       <p className="font-semibold">
                         {formatMoney(
                           item.price * item.quantity,
@@ -982,9 +988,11 @@ function OrderView({
                 />
               )}
               <Separator />
-              <div className="flex items-center justify-between text-base font-semibold">
+              <div className="flex items-start justify-between gap-4 text-base font-semibold">
                 <span>{t("orderStatus.grandTotal")}</span>
-                <span>{formatMoney(order.total, order.currency)}</span>
+                <span className="text-right">
+                  {formatMoney(order.total, order.currency)}
+                </span>
               </div>
             </div>
           </SectionCard>
@@ -1014,7 +1022,7 @@ function OrderView({
         </div>
 
         {/* Right column */}
-        <div className="space-y-6">
+        <div className="min-w-0 space-y-6">
           <SectionCard icon={MapPin} title={t("orderStatus.shippingAddress")}>
             <div className="space-y-3 text-sm">
               {order.address.name && (
@@ -1080,11 +1088,11 @@ function OrderView({
               )}
               {order.payment.razorpayPaymentId && (
                 <div className="flex items-start justify-between gap-3">
-                  <span className="text-muted-foreground">
+                  <span className="shrink-0 text-muted-foreground">
                     {t("orderStatus.paymentId")}
                   </span>
-                  <span className="flex items-center gap-1">
-                    <span className="max-w-[150px] truncate font-mono text-xs">
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="min-w-0 max-w-[150px] truncate font-mono text-xs">
                       {order.payment.razorpayPaymentId}
                     </span>
                     <CopyButton value={order.payment.razorpayPaymentId} />
@@ -1143,11 +1151,11 @@ function OrderView({
                 />
               )}
               <div className="flex items-start justify-between gap-3">
-                <span className="text-muted-foreground">
+                <span className="shrink-0 text-muted-foreground">
                   {t("orderStatus.trackingNumber")}
                 </span>
-                <span className="flex items-center gap-1">
-                  <span className="font-mono text-xs">
+                <span className="flex min-w-0 items-center gap-1">
+                  <span className="min-w-0 break-all font-mono text-xs">
                     {awb ?? t("orderStatus.notAssigned")}
                   </span>
                   {awb && <CopyButton value={awb} />}
@@ -1165,7 +1173,7 @@ function OrderView({
                 />
               )}
 
-              <div className="flex gap-2 pt-1">
+              <div className="flex flex-col gap-2 pt-1 sm:flex-row">
                 <Button
                   size="sm"
                   variant="outline"
@@ -1263,15 +1271,15 @@ function OrderView({
 function MetaTile({ icon, label, value, mono, copyable }) {
   const Icon = icon;
   return (
-    <div className="rounded-lg border bg-background p-3">
+    <div className="min-w-0 rounded-lg border bg-background p-3">
       <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-        <Icon className="size-3.5" />
+        <Icon className="size-3.5 shrink-0" />
         {label}
       </p>
-      <div className="mt-1 flex items-center gap-1">
+      <div className="mt-1 flex min-w-0 items-center gap-1">
         <p
           className={cn(
-            "truncate text-sm font-semibold",
+            "min-w-0 flex-1 truncate text-sm font-semibold",
             mono && "font-mono text-xs",
           )}
         >
@@ -1288,12 +1296,12 @@ function RequestBlock({ icon, label, data }) {
   const Icon = icon;
   return (
     <div className="rounded-lg border p-3">
-      <div className="flex items-center justify-between gap-2">
-        <span className="flex items-center gap-2 font-medium">
-          <Icon className="size-4 text-muted-foreground" />
-          {label}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="flex min-w-0 items-center gap-2 font-medium">
+          <Icon className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 break-words">{label}</span>
         </span>
-        <Badge variant="outline" className="capitalize">
+        <Badge variant="outline" className="shrink-0 capitalize">
           {prettify(data.status)}
         </Badge>
       </div>
@@ -1346,7 +1354,7 @@ function StateCard({ icon, title, description, children }) {
               {description}
             </EmptyDescription>
           </EmptyHeader>
-          <EmptyContent className="mt-2 flex-row justify-center gap-3">
+          <EmptyContent className="mt-2 flex-row flex-wrap justify-center gap-3">
             {children}
           </EmptyContent>
         </Empty>
@@ -1359,12 +1367,12 @@ function OrderLoading() {
   return (
     <div className="space-y-6" aria-busy="true" aria-live="polite">
       <Card className="shadow-none">
-        <CardContent className="space-y-6 p-6">
+        <CardContent className="space-y-6 p-4 sm:p-6">
           <div className="flex items-center gap-4">
             <Skeleton className="size-12 rounded-2xl" />
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-40" />
-              <Skeleton className="h-3 w-56" />
+            <div className="min-w-0 flex-1 space-y-2">
+              <Skeleton className="h-5 w-40 max-w-full" />
+              <Skeleton className="h-3 w-56 max-w-full" />
             </div>
           </div>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
