@@ -77,6 +77,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { validateEncrypted } from "@/utils/crypt";
 
 /* ===========================================================================
  * Helpers
@@ -1052,7 +1053,12 @@ function OrderView({
                   ? ` - ${order.address.postalCode}`
                   : ""}
               </p>
-              <p className="text-muted-foreground">{order.address.country}</p>
+              <p className="text-foreground">
+                {validateEncrypted(new String(order.address.country))
+                  ? decryptField(new String(order.address.country))
+                  : "India"}{" "}
+                {/* HARDCODED FIX LATER */}
+              </p>
 
               {(order.address.phoneNumber || order.address.email) && (
                 <>
