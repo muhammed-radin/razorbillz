@@ -121,6 +121,7 @@ const api = {
       }, interval);
     });
   },
+  sessionInMemory: null, // Store the session in memory if sessionStorage is not available
   async getSession() {
     // 1. Cache-first: an already-decrypted session is reused until the
     //    cache is explicitly cleared (logout / refresh).
@@ -129,6 +130,9 @@ const api = {
       if (raw) {
         const session = JSON.parse(decrypt(raw));
         if (session) return { ...session };
+      }
+      if (this.sessionInMemory) {
+        return { ...this.sessionInMemory };
       }
     } catch {
       // Corrupt cache: fall through to a live fetch.
@@ -146,6 +150,7 @@ const api = {
         live = await authClient.getSession();
       } catch {
         sessionStorage.removeItem("session");
+        api.sessionInMemory = null;
         return {
           data: null,
           fromCache: false,
@@ -174,9 +179,11 @@ const api = {
           "session",
           encrypt(JSON.stringify({ ...session, fromCache: true })),
         );
+        api.sessionInMemory = { ...session, fromCache: true };
         return { ...session, fromCache: false };
       } catch {
         // Storage full/blocked: session still returned live.
+        api.sessionInMemory = { ...session, fromCache: true };
         return { ...session, fromCache: false };
       }
     })();
@@ -189,6 +196,7 @@ const api = {
     }
   },
   clearSessionCache() {
+    this.sessionInMemory = null;
     try {
       sessionStorage.removeItem("session");
     } catch {
