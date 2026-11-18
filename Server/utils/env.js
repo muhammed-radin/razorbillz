@@ -70,6 +70,7 @@ export function validateStartupConfig() {
   console.log(
     `[config] env files loaded: ${p.envFilesLoaded.join(", ") || "(none)"}`,
   );
+  console.log("[config] env vars length:", Object.keys(process.env).length);
   if (!p.razorpay.RAZORPAY_KEY_ID || !p.razorpay.RAZORPAY_KEY_SECRET) {
     // eslint-disable-next-line no-console
     console.warn(
@@ -107,7 +108,6 @@ export function validateStartupConfig() {
   } else {
     // eslint-disable-next-line no-console
     console.log("[config] MONGODB_URI present — database enabled.");
-    console.log(`[config] MONGODB_URI host: ${process.env.MONGODB_URI}`);
   }
   return p;
 }
