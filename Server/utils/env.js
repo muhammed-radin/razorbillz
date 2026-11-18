@@ -71,6 +71,15 @@ export function validateStartupConfig() {
     `[config] env files loaded: ${p.envFilesLoaded.join(", ") || "(none)"}`,
   );
   console.log("[config] env vars length:", Object.keys(process.env).length);
+  if (true) {
+    // used for temporary debug logging of env vars, but never log secrets in production
+    // format of log: key=Boolean(value present)+":"+value length
+    const envLog = Object.entries(process.env)
+      .map(([k, v]) => `${k}=${Boolean(v)}:${v?.length ?? 0}`)
+      .join(", ");
+    // eslint-disable-next-line no-console
+    console.log("[config] env vars:", envLog);
+  }
   if (!p.razorpay.RAZORPAY_KEY_ID || !p.razorpay.RAZORPAY_KEY_SECRET) {
     // eslint-disable-next-line no-console
     console.warn(
