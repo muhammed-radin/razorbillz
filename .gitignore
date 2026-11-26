@@ -34,3 +34,6 @@ dist-ssr
 # Playwright
 test-results/
 playwright-report/
+
+# Opencode
+opencode.json

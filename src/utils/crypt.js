@@ -1,5 +1,23 @@
 import CryptoJS from "crypto-js";
 
+const LEGACY_PREFIX = "U2FsdGVkX1";
+/* An older write path occasionally dropped the leading "U" of the
+ * CryptoJS/OpenSSL prefix. The remaining payload is still valid. */
+const LEGACY_PREFIX_BODY = "2FsdGVkX1";
+
+function normalizeLegacyCiphertext(value) {
+  if (typeof value !== "string") return value;
+  if (value.startsWith(LEGACY_PREFIX)) return value;
+  return value.startsWith(LEGACY_PREFIX_BODY) ? `U${value}` : value;
+}
+
+function isLegacyCiphertext(value) {
+  return (
+    typeof value === "string" &&
+    normalizeLegacyCiphertext(value).startsWith(LEGACY_PREFIX)
+  );
+}
+
 function validateEncrypted(ciphertext) {
   if (typeof ciphertext !== "string" || !ciphertext.startsWith("U2FsdGVkX1")) {
     return false;
@@ -8,15 +26,28 @@ function validateEncrypted(ciphertext) {
 }
 
 function decryptCipher(ciphertext, strict = false) {
-  if (!validateEncrypted(ciphertext)) {
+  if (!isLegacyCiphertext(ciphertext)) {
     return ciphertext; // Return the original value if it's not encrypted
   }
 
-  const key = strict
-    ? import.meta.env.VITE_CRYPTED_STRICT
-    : import.meta.env.VITE_CRYPTED;
-  const bytes = CryptoJS.AES.decrypt(ciphertext, key);
-  return bytes.toString(CryptoJS.enc.Utf8);
+  const normalized = normalizeLegacyCiphertext(ciphertext);
+  /* Some rows were encrypted with the sibling key; try the requested one
+   * first, then the other, before giving up. */
+  const keys = strict
+    ? [import.meta.env.VITE_CRYPTED_STRICT, import.meta.env.VITE_CRYPTED]
+    : [import.meta.env.VITE_CRYPTED, import.meta.env.VITE_CRYPTED_STRICT];
+
+  for (const key of keys) {
+    if (!key) continue;
+    try {
+      const bytes = CryptoJS.AES.decrypt(normalized, key);
+      const text = bytes.toString(CryptoJS.enc.Utf8);
+      if (text && !text.includes("\uFFFD")) return text;
+    } catch {
+      // wrong key — try the next one
+    }
+  }
+  return "";
 }
 
 function encrypt(plaintext, strict = false) {
@@ -53,11 +84,7 @@ function decryptField(value, strict = false, maxRounds = 3) {
   };
   let cur = unquote(value);
   let i = 0;
-  while (
-    typeof cur === "string" &&
-    cur.startsWith("U2FsdGVkX1") &&
-    i < maxRounds
-  ) {
+  while (isLegacyCiphertext(cur) && i < maxRounds) {
     let next = null;
     try {
       next = decryptCipher(cur, strict);

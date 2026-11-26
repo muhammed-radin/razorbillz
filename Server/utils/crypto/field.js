@@ -27,13 +27,27 @@ import {
  * ========================================================= */
 
 const LEGACY_PREFIX = "U2FsdGVkX1";
+/* An older client write path occasionally dropped the leading "U" from
+ * the CryptoJS/OpenSSL prefix ("U2FsdGVkX1…" → "2FsdGVkX1…"). The rest of
+ * the payload is still a perfectly valid legacy ciphertext. */
+const LEGACY_PREFIX_BODY = "2FsdGVkX1";
+
+/** Restore the leading "U" when it was lost; plain text passes through. */
+function normalizeLegacyCiphertext(value) {
+  if (typeof value !== "string") return value;
+  if (value.startsWith(LEGACY_PREFIX)) return value;
+  return value.startsWith(LEGACY_PREFIX_BODY) ? `U${value}` : value;
+}
 
 export function isSealedEnvelope(value) {
   return isSealed(value);
 }
 
 export function isLegacyEncrypted(value) {
-  return typeof value === "string" && value.startsWith(LEGACY_PREFIX);
+  return (
+    typeof value === "string" &&
+    normalizeLegacyCiphertext(value).startsWith(LEGACY_PREFIX)
+  );
 }
 
 export function isEncrypted(value) {
@@ -67,17 +81,32 @@ export function encryptPlain(value, opts = {}) {
 
 /* ---------------- READ ---------------- */
 
-function openLegacy(value, strict = false) {
-  const passphrase = strict
-    ? process.env.CRYPTED_STRICT
-    : process.env.CRYPTED;
+function openLegacyWithKey(value, passphrase) {
   if (!passphrase) return null;
   try {
     const bytes = CryptoJS.AES.decrypt(value, passphrase);
-    return bytes.toString(CryptoJS.enc.Utf8) || null;
+    const text = bytes.toString(CryptoJS.enc.Utf8);
+    /* Wrong passphrases usually throw on toString(), but can also yield
+     * replacement characters — never treat that as a successful open. */
+    if (!text || text.includes("\uFFFD")) return null;
+    return text;
   } catch {
     return null;
   }
+}
+
+function openLegacy(value, strict = false) {
+  const ciphertext = normalizeLegacyCiphertext(value);
+  /* Some rows were written with the other key (e.g. an address encrypted
+   * with CRYPTED_STRICT). Try the requested key first, then its sibling. */
+  const passphrases = strict
+    ? [process.env.CRYPTED_STRICT, process.env.CRYPTED]
+    : [process.env.CRYPTED, process.env.CRYPTED_STRICT];
+  for (const passphrase of passphrases) {
+    const opened = openLegacyWithKey(ciphertext, passphrase);
+    if (opened) return opened;
+  }
+  return null;
 }
 
 /* Context fallbacks: vaulted fields may arrive sealed under any of
@@ -95,12 +124,28 @@ const CONTEXT_FALLBACKS = [
   "user:email",
 ];
 
-/* Decrypt a single PII field. Never throws for unknown formats —
- * unknown/plaintext/non-strings pass through (drop-in compat with the
- * old decryptField). For tampered ze1 envelopes the ORIGINAL ciphertext
- * is returned and a warning is logged (surface to ops via logs route).
- * `strict` mirrors the legacy crypt.js boolean (legacy key selection). */
-export function decryptField(value, { strict = false, context = "" } = {}) {
+/* Older browser saves JSON.stringify'd address fields before encrypting,
+ * so a successfully opened value can still be a quoted JSON string. */
+function unquoteJsonString(value) {
+  if (typeof value !== "string") return value;
+  const trimmed = value.trim();
+  if (
+    trimmed.length < 2 ||
+    !trimmed.startsWith('"') ||
+    !trimmed.endsWith('"')
+  ) {
+    return value;
+  }
+  try {
+    const parsed = JSON.parse(trimmed);
+    return typeof parsed === "string" ? parsed : value;
+  } catch {
+    return value;
+  }
+}
+
+/* One decryption pass: legacy CryptoJS or one ze1 envelope. */
+function decryptLayer(value, { strict = false, context = "" } = {}) {
   if (typeof value !== "string" || value === "") return value;
   if (isLegacyEncrypted(value)) {
     return openLegacy(value, strict) ?? value;
@@ -129,6 +174,32 @@ export function decryptField(value, { strict = false, context = "" } = {}) {
     "[crypto] decrypt failed (tampered, context-mismatched or key-mismatched envelope)",
   );
   return value;
+}
+
+/* Decrypt a single PII field. Never throws for unknown formats —
+ * unknown/plaintext/non-strings pass through (drop-in compat with the
+ * old decryptField). For tampered ze1 envelopes the ORIGINAL ciphertext
+ * is returned and a warning is logged (surface to ops via logs route).
+ * `strict` mirrors the legacy crypt.js boolean (legacy key selection).
+ *
+ * Rows written before `unwrapLegacyIfPossible` can be DOUBLE-wrapped
+ * (ze1 around a legacy U2Fsd… string), and a legacy write path dropped
+ * the leading "U". Layers are peeled here (bounded) so reads always end
+ * at plaintext; JSON-quoted scalars are unquoted between passes. */
+const MAX_DECRYPT_LAYERS = 3;
+
+export function decryptField(value, { strict = false, context = "" } = {}) {
+  let current = value;
+  for (let i = 0; i < MAX_DECRYPT_LAYERS; i += 1) {
+    if (typeof current !== "string" || current === "") break;
+    const next = unquoteJsonString(
+      decryptLayer(current, { strict, context }),
+    );
+    if (next === current) break; // not encrypted / key unavailable
+    current = next;
+    if (!isSealedEnvelope(current) && !isLegacyEncrypted(current)) break;
+  }
+  return current;
 }
 
 /* Back-compat: positional `strict` like crypt.js */

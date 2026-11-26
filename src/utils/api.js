@@ -242,6 +242,17 @@ const api = {
  * rebuilds them from the (already invalidated) server cache. */
 installClientCacheInvalidation(api.client);
 
+/* A 401 from our REST API means the cookie session is gone or stale.
+ * Drop the cached session so route guards and UI state re-check the
+ * server instead of rendering a user that no longer exists. */
+api.client.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error?.response?.status === 401) api.clearSessionCache();
+    return Promise.reject(error);
+  },
+);
+
 /* =========================================================
  * GET request coalescing.
  *

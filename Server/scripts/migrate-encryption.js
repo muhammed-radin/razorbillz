@@ -35,6 +35,7 @@ import {
 } from "../utils/db.js";
 import {
   decrypt,
+  decryptField,
   encryptAddress,
   encryptField,
   isSealed,
@@ -269,19 +270,35 @@ async function run() {
       for (const parent of ["shippingAddress", "billingAddress"]) {
         const addr = o[parent];
         if (!addr || typeof addr !== "object") continue;
-        const needs = Object.values(addr).some(
-          (v) => typeof v === "string" && v && !isSealed(v),
-        );
-        if (needs) {
-          const opened = {};
-          for (const [k, v] of Object.entries(addr)) {
-            opened[k] =
-              typeof v === "string" && !isSealed(v) && v
-                ? decrypt(v)
-                : v;
+        /* Unwrap to TRUE plaintext: peel ze1 layers (per-field AAD
+         * context), then any remaining legacy CryptoJS layer. This
+         * also repairs DOUBLE-WRAPPED fields — e.g. a client with a
+         * broken legacy key once sent `U2FsdGVkX1…` inside an address
+         * value and the server sealed the ciphertext as-is; those
+         * read back as ciphertext in the UI until unwrapped here. */
+        const opened = {};
+        let needs = false;
+        for (const [k, v] of Object.entries(addr)) {
+          if (typeof v !== "string" || v === "") {
+            opened[k] = v;
+            continue;
           }
-          set[parent] = sealAddressObject(opened);
+          let plain = v;
+          for (let round = 0; round < 3; round += 1) {
+            if (isSealed(plain)) {
+              const inner = decryptField(plain, { context: `order:${k}` });
+              if (typeof inner !== "string" || inner === plain) break;
+              plain = inner;
+            } else if (plain.startsWith("U2FsdGVkX1")) {
+              const inner = decryptField(plain);
+              if (typeof inner !== "string" || inner === plain) break;
+              plain = inner;
+            } else break;
+          }
+          opened[k] = plain;
+          if (plain !== v) needs = true;
         }
+        if (needs) set[parent] = sealAddressObject(opened);
       }
       return Object.keys(set).length ? set : null;
     });

@@ -102,6 +102,57 @@ test("field: legacy CryptoJS values decrypt via dispatch", async () => {
   assert.equal(decryptField(legacy), "Legacy Name");
 });
 
+test("field: legacy value with a missing leading 'U' still decrypts", async () => {
+  const CryptoJS = (await import("crypto-js")).default;
+  const legacy = CryptoJS.AES.encrypt(
+    "House 360, Kadannamanna PO",
+    "test-legacy-key",
+  ).toString();
+  const truncated = legacy.slice(1);
+  assert.ok(truncated.startsWith("2FsdGVkX1"));
+  assert.equal(decryptField(truncated), "House 360, Kadannamanna PO");
+});
+
+test("field: JSON-quoted legacy payloads are unquoted", async () => {
+  const CryptoJS = (await import("crypto-js")).default;
+  const legacy = CryptoJS.AES.encrypt(
+    JSON.stringify("MG Road 5"),
+    "test-legacy-key",
+  ).toString();
+  assert.equal(decryptField(legacy), "MG Road 5");
+});
+
+test("field: sealed envelope around legacy ciphertext unwraps fully", async () => {
+  const CryptoJS = (await import("crypto-js")).default;
+  const legacy = CryptoJS.AES.encrypt(
+    "12/3 Baker St",
+    "test-legacy-key",
+  ).toString();
+  const doubleWrapped = sealString(legacy, { context: "order:street" });
+  assert.ok(doubleWrapped.startsWith("ze1."));
+  assert.equal(decryptField(doubleWrapped, { context: "order:street" }), "12/3 Baker St");
+});
+
+test("field: openAddressObject repairs double-wrapped / truncated fields", async () => {
+  const CryptoJS = (await import("crypto-js")).default;
+  const legacy = CryptoJS.AES.encrypt(
+    JSON.stringify("MG Road 5"),
+    "test-legacy-key",
+  ).toString();
+
+  const stored = {
+    name: sealString("Miral George", { context: "order:name" }),
+    street: sealString(legacy, { context: "order:street" }),
+    city: sealString("Thrissur", { context: "order:city" }),
+    postalCode: sealString(legacy.slice(1), { context: "order:postalCode" }),
+  };
+  const opened = openAddressObject(stored);
+  assert.equal(opened.name, "Miral George");
+  assert.equal(opened.street, "MG Road 5");
+  assert.equal(opened.city, "Thrissur");
+  assert.equal(opened.postalCode, "MG Road 5");
+});
+
 test("field: non-encrypted values pass through untouched", () => {
   assert.equal(decryptField("plain-id"), "plain-id");
   assert.equal(decryptField(null), null);
